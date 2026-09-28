@@ -11,7 +11,7 @@
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, describe, it } from 'node:test'
@@ -71,9 +71,18 @@ describe('friendlyMachineLabel', () => {
   })
 })
 
+/** The version this package actually ships, so the assertion cannot go stale. */
+const PACKAGE_VERSION = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).version
+
 describe('resolveConfig', () => {
   it('applies defaults when nothing is configured', () => {
-    assert.deepEqual(resolveConfig(undefined), { machineLabel: '', pluginVersion: '0.1.0' })
+    assert.deepEqual(resolveConfig(undefined), { machineLabel: '', pluginVersion: PACKAGE_VERSION })
+  })
+
+  it('reports the package version rather than a hardcoded literal', () => {
+    assert.match(resolveConfig(undefined).pluginVersion, /^\d+\.\d+\.\d+/)
   })
 
   it('honours an explicit machine label and trims it', () => {

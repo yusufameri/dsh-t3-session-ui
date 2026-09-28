@@ -26,10 +26,27 @@
  */
 
 import { execFile } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { arch, homedir, hostname, platform, release } from 'node:os'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
+
+/**
+ * This package's own version, read from its `package.json`.
+ *
+ * Reported in `hostFacts` so a bug report can name the build that produced it.
+ * Read rather than hardcoded: a literal here silently goes stale on the next
+ * release, which is exactly what a version field must never do.
+ */
+const PACKAGE_VERSION = (() => {
+  try {
+    const parsed = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+    return typeof parsed.version === 'string' ? parsed.version : '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+})()
 
 /** Plugin id; also the Client bundle's module id and the route's namespace. */
 export const name = 'dsh-t3-session-ui'
@@ -670,7 +687,7 @@ function resolveConfig(config) {
   const machineLabel = typeof config?.machineLabel === 'string' ? config.machineLabel.trim() : ''
   return {
     machineLabel,
-    pluginVersion: typeof config?.pluginVersion === 'string' ? config.pluginVersion : '0.1.0',
+    pluginVersion: typeof config?.pluginVersion === 'string' ? config.pluginVersion : PACKAGE_VERSION,
   }
 }
 

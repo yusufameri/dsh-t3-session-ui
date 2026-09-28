@@ -1,19 +1,40 @@
 # Capture assets
 
-> **These are renders, not screenshots.** Every image here is the plugin's *real* components —
-> `client.js` loaded through a stubbed `window.__ModuleLoader__`, its own `apply()` run to inject
-> the real stylesheet — driven by fixture data through the plugin's own code path and painted with a
-> **representative token sheet** for the `--dsw-alias-*` variables. They are **not screenshots of a
-> live DSH window**, the token values were not read from a running DSH install, and nothing here
-> proves what a live session looks like. The fixtures use invented data (`Shima's MacBook Pro`,
-> `acme`, `deepseek-v4.1-flash`), not a real machine or session.
+> **Two kinds of image live here.** The `live-*.png` files ARE screenshots of a real DeepSeek
+> Harness GUI with this plugin installed — real `os.hostname()`, real session `cwd`, real agent
+> preset, real approval policy, real token measurement, read through the plugin's own Host route.
+> Everything else (`session-context-*`, `context-*`, `status-ladder`, `context-ring`) is a
+> **component render**: the plugin's real `client.js` driven by fixture data and painted with a
+> representative `--dsw-alias-*` token sheet. Those renders use invented data (`Shima's MacBook
+> Pro`, `acme`, `deepseek-v4.1-flash`) and are not screenshots; the live captures supersede them
+> wherever the two disagree.
 
 Two more honest caveats: the pages disable CSS animations and transitions so a capture is
 deterministic, which means the working-status dot is shown at full opacity rather than mid-pulse; and
 the GIF frame durations are nominal, so the timing looks the same on any viewer regardless of how
 fast the browser actually paints.
 
-## Current assets
+## Live captures
+
+Taken from a real DSH `0.2.0-rc.1` instance booted with an isolated `DSH_HOME` containing only this
+plugin, driven over the Chrome DevTools Protocol (`tools/live-cdp.mjs`). The values shown are read
+from that instance's own services, so nothing here is fixture data — note `Shimas's MacBook Pro`,
+`default-workspace`, `standard` and `ask`, each of which comes from a different Host probe.
+
+| File | Shows | Size |
+|---|---|---|
+| [`live-app.png`](./live-app.png) | The whole GUI, to show this is a real app window | 1440×757, 58658 B |
+| [`live-hover-card.png`](./live-hover-card.png) | The session-row hover card on a real row, carrying real host values | 261×218, 10780 B |
+| [`live-composer-panel.png`](./live-composer-panel.png) | The context ring's panel, expanded inline in the real composer | 790×300, 21431 B |
+
+Regenerate (needs a running instance and Chrome on `--remote-debugging-port`):
+
+```sh
+DSH_MODULE_RESOLVE=~/.dsh/profiles/web/package.json \
+  node tools/live-cdp.mjs out.png --eval "document.querySelector('.t3s-meterButton').click()"
+```
+
+## Component renders
 
 | File | Shows | Frame / size |
 |---|---|---|

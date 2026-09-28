@@ -16,11 +16,17 @@ header context strip, and a context-window meter that can compact.
 |---|---|
 | ![Header context strip and lineage breadcrumb](assets/session-header-strip.png) | ![Hover card in the light theme](assets/session-context-hover-light.png) |
 
-> **About these images:** they are renders of this plugin's **real components**
-> (the actual `client.js`, loaded and styled through its own code path) driven by
-> fixture data with a representative DSH token sheet — **not screenshots of a
-> live DSH window**. See [`assets/README.md`](assets/README.md) for exactly how
-> each is produced, the regenerate command, and the full caveat.
+| Live: session-row hover card | Live: context panel in the composer |
+|---|---|
+| ![The hover card in a real DSH window, showing real host values](assets/live-hover-card.png) | ![The context panel expanded inline in the real composer](assets/live-composer-panel.png) |
+
+> **About these images.** The two above are **live captures** of a real DSH `0.2.0-rc.1` instance
+> with the plugin installed, so their values (`Shimas's MacBook Pro`, `default-workspace`,
+> `standard`, `ask`) come from real Host probes. The images further down are **component renders** —
+> the plugin's real components driven by fixture data with a representative theme token sheet — used
+> because a fresh instance has no git repository, no subagents and no long conversation to show.
+> [`assets/README.md`](assets/README.md) labels every file and gives the regenerate command for both
+> pipelines.
 
 ## Credit
 
