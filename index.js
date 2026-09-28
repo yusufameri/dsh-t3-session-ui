@@ -139,20 +139,47 @@ async function readJsonBody(request) {
 }
 
 /**
- * Write one JSON response.
+ * Write one JSON response, never throwing.
+ *
+ * Only `content-type` is set on the primary path. DSH's web server wraps plugin
+ * route responses (compression, `Vary`), and an extra `content-length` or
+ * `cache-control` can make that wrapper throw — which surfaces as a bare
+ * `400 Bad Request` with no body and no `content-type`, indistinguishable from a
+ * missing route. The primary shape mirrors `dsh-better-sidebar`, whose writer
+ * sets the content type and nothing else; the fallbacks keep a throwing wrapper
+ * from turning every response into that anonymous 400.
  *
  * @param response - Node HTTP response.
  * @param status - HTTP status code.
  * @param body - Serialisable body.
  */
 function writeJson(response, status, body) {
-  const payload = JSON.stringify(body)
-  response.writeHead(status, {
-    'content-type': 'application/json; charset=utf-8',
-    'content-length': Buffer.byteLength(payload),
-    'cache-control': 'no-store',
-  })
-  response.end(payload)
+  let payload
+  try {
+    payload = JSON.stringify(body)
+  } catch {
+    payload = '{"ok":false,"error":{"code":"unserialisable","message":"response was not serialisable"}}'
+  }
+  try {
+    response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
+    response.end(payload)
+    return
+  } catch {
+    /* fall through to the lower-level shapes */
+  }
+  try {
+    response.statusCode = status
+    response.setHeader?.('content-type', 'application/json; charset=utf-8')
+    response.end(payload)
+    return
+  } catch {
+    /* fall through */
+  }
+  try {
+    response.end(payload)
+  } catch {
+    /* the response is already unusable; nothing further we can do */
+  }
 }
 
 /** A wire error carrying the code and status the Client half surfaces. */
@@ -679,7 +706,18 @@ export function apply(ctx, config) {
         kind: 'prefix',
         path: ROUTE_PREFIX,
         handler: async (request, response) => {
-          const trustedHosts = ctx.webRuntime?.trustedHosts
+          // Read the trusted-host list through `ctx.get` inside a guard: a
+          // Cordis service accessor can THROW for an unregistered name, and
+          // optional chaining does not catch that, so a direct
+          // `ctx.webRuntime?.trustedHosts` could fail every request before a
+          // response is ever written.
+          let trustedHosts
+          try {
+            const webRuntime = typeof ctx.get === 'function' ? ctx.get('webRuntime') : undefined
+            trustedHosts = webRuntime?.trustedHosts
+          } catch {
+            trustedHosts = undefined
+          }
           if (!isTrustedRequest(request, trustedHosts)) {
             writeJson(response, 403, { ok: false, error: { code: 'forbidden', message: 'forbidden' } })
             return

@@ -224,8 +224,8 @@ const COMPOSER_CSS = `
   flex-direction: column;
   justify-content: flex-end;
   align-items: flex-end;
-  width: 440px;
-  height: 396px;
+  width: 620px;
+  height: 420px;
   padding: 14px;
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l1);
@@ -321,7 +321,7 @@ const SHOTS = [
     contentCss: 'display: flex; align-items: flex-end; justify-content: flex-end;',
     prefs: true,
     afterMount: 'open-meter',
-    window: { w: 620, h: 600 },
+    window: { w: 820, h: 700 },
     frames: [
       {
         blocks: [{ component: 'ContextMeter', props: { sessionId: 's1' } }],

@@ -80,6 +80,7 @@ window.__ModuleLoader__.load({
       'meter.aria': 'Context window, {percent} used',
       'meter.ariaTokens': 'Context window, {tokens} tokens used',
       'meter.loading': 'Reading context…',
+      'meter.loadFailed': 'Could not read the session context: {message}',
       'meter.unavailable': 'This session has no measured context yet.',
       'meter.noMax': 'The provider has not reported a context window size.',
       'meter.baseline': 'Measured from {kind}',
@@ -138,6 +139,7 @@ window.__ModuleLoader__.load({
       'meter.aria': '上下文窗口，已用 {percent}',
       'meter.ariaTokens': '上下文窗口，已用 {tokens} token',
       'meter.loading': '正在读取上下文…',
+      'meter.loadFailed': '无法读取会话上下文：{message}',
       'meter.unavailable': '该会话尚无上下文测量。',
       'meter.noMax': '提供方未报告上下文窗口大小。',
       'meter.baseline': '基于 {kind} 测量',
@@ -829,7 +831,15 @@ window.__ModuleLoader__.load({
                     ),
               ),
               bundle === undefined
-                ? h('span', { className: 't3s-panelNote' }, t('meter.loading'))
+                ? h(
+                    'span',
+                    { className: entry?.error === undefined ? 't3s-panelNote' : 't3s-panelError' },
+                    // Never swallow a failed read: an indefinite "Reading…" is
+                    // indistinguishable from a broken Host route.
+                    entry?.error === undefined
+                      ? t('meter.loading')
+                      : fill(t('meter.loadFailed'), { message: entry.error }),
+                  )
                 : Number.isFinite(used) && Number.isFinite(max)
                   ? h(
                       'span',
@@ -1120,7 +1130,7 @@ window.__ModuleLoader__.load({
 .t3s-stripIcon { display: inline-flex; flex: 0 0 auto; color: var(--dsw-alias-label-secondary); opacity: .8; }
 .t3s-stripText { flex: 0 0 auto; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.t3s-meter { position: relative; display: inline-flex; align-items: center; }
+.t3s-meter { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .t3s-meterButton { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border: 0; border-radius: 999px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; font-size: 11px; }
 .t3s-meterButton:hover { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
 .t3s-meterButton:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
@@ -1128,7 +1138,15 @@ window.__ModuleLoader__.load({
 .t3s-ring { width: 18px; height: 18px; display: block; }
 .t3s-meterText { font-variant-numeric: tabular-nums; }
 
-.t3s-panel { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 1200; display: flex; flex-direction: column; gap: 7px; width: 248px; padding: 10px 11px; border-radius: 10px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-label-secondary); font-size: 11px; text-align: left; }
+/*
+ * The panel expands INLINE, across the composer toolbar. This seat's own
+ * contract is that an occupant "can expand across the toolbar while retaining
+ * the editor and submit action" and that it signals the toolbar through its
+ * onActiveChange callback — a floating popover fights that, and an absolutely
+ * positioned panel escapes to the page corner when the toolbar's row does not
+ * establish a positioning context.
+ */
+.t3s-panel { display: flex; flex-direction: column; gap: 8px; width: min(560px, 60vw); padding: 10px 11px; border-radius: 10px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-label-secondary); font-size: 11px; text-align: left; }
 .t3s-panelHead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .t3s-panelTitle { font-weight: 600; color: var(--dsw-alias-label-primary); }
 .t3s-panelMeta { font-variant-numeric: tabular-nums; }
@@ -1158,11 +1176,12 @@ window.__ModuleLoader__.load({
 .t3s-lineageTitleButton:hover { text-decoration: underline; }
 .t3s-lineageChips { flex: 0 0 auto; }
 
-.t3s-prefs { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--dsw-alias-border-l1); padding-top: 8px; margin-top: 2px; }
-.t3s-prefRow { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+/* The toggles wrap into rows so the wider inline panel stays short. */
+.t3s-prefs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; border-top: 1px solid var(--dsw-alias-border-l1); padding-top: 8px; margin-top: 2px; }
+.t3s-prefRow { display: flex; align-items: center; gap: 5px; cursor: pointer; }
 .t3s-prefRow input { accent-color: var(--dsw-alias-brand-primary); }
 .t3s-prefLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.t3s-prefInput { width: 100%; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 11px; }
+.t3s-prefInput { flex: 1 1 100%; width: 100%; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 11px; }
 .t3s-linkButton { padding: 0; border: 0; background: transparent; color: var(--dsw-alias-brand-primary); font: inherit; font-size: 11px; cursor: pointer; }
 `
 

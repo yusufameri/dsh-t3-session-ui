@@ -423,3 +423,102 @@ describe('compact route', () => {
     assert.equal(envelope.error.code, 'unavailable')
   })
 })
+
+describe('response writing resilience', () => {
+  /**
+   * Invoke one route against a response whose `writeHead` throws, which is what
+   * a wrapping middleware can do when a plugin sets its own `content-length`.
+   * The handler must still produce a JSON envelope rather than letting DSH
+   * answer with a bare, anonymous 400.
+   */
+  async function callWithBrokenWriteHead(handler, path, body) {
+    const payload = Buffer.from(JSON.stringify(body ?? {}))
+    const request = {
+      method: 'POST',
+      url: path,
+      headers: { host: '127.0.0.1:19387' },
+      async *[Symbol.asyncIterator]() {
+        yield payload
+      },
+    }
+    let captured
+    const response = {
+      statusCode: undefined,
+      headers: {},
+      writeHead() {
+        throw new Error('wrapper refused writeHead')
+      },
+      setHeader(name, value) {
+        this.headers[name] = value
+      },
+      end(text) {
+        captured = { status: this.statusCode, text }
+      },
+    }
+    await handler(request, response)
+    assert.ok(captured !== undefined, 'a response must still be written')
+    return captured
+  }
+
+  it('still writes a JSON envelope when writeHead throws', async () => {
+    const { handler } = mount()
+    const captured = await callWithBrokenWriteHead(handler, '/t3session/api/hostFacts', {})
+    assert.equal(captured.status, 200)
+    const envelope = JSON.parse(captured.text)
+    assert.equal(envelope.ok, true)
+    assert.equal(typeof envelope.value.hostname, 'string')
+  })
+
+  it('still writes the fence rejection when writeHead throws', async () => {
+    const { handler } = mount()
+    const payload = Buffer.from('{}')
+    const request = {
+      method: 'POST',
+      url: '/t3session/api/hostFacts',
+      headers: { host: 'evil.example.com' },
+      async *[Symbol.asyncIterator]() {
+        yield payload
+      },
+    }
+    let captured
+    const response = {
+      statusCode: undefined,
+      writeHead() {
+        throw new Error('wrapper refused writeHead')
+      },
+      setHeader() {},
+      end(text) {
+        captured = { status: this.statusCode, text }
+      },
+    }
+    await handler(request, response)
+    assert.equal(captured.status, 403)
+    assert.equal(JSON.parse(captured.text).error.code, 'forbidden')
+  })
+
+  it('survives a response that throws on every write path', async () => {
+    const { handler } = mount()
+    const payload = Buffer.from('{}')
+    const request = {
+      method: 'POST',
+      url: '/t3session/api/hostFacts',
+      headers: { host: '127.0.0.1:19387' },
+      async *[Symbol.asyncIterator]() {
+        yield payload
+      },
+    }
+    const response = {
+      writeHead() {
+        throw new Error('nope')
+      },
+      setHeader() {
+        throw new Error('nope')
+      },
+      end() {
+        throw new Error('nope')
+      },
+    }
+    // The handler must swallow this rather than reject the route.
+    await handler(request, response)
+  })
+})

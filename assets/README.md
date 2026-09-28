@@ -19,7 +19,7 @@ fast the browser actually paints.
 |---|---|---|
 | [`session-context-hover.png`](./session-context-hover.png) | Session-row hover card — dark | 318×319, still, 14017 B |
 | [`session-context-hover-light.png`](./session-context-hover-light.png) | Session-row hover card — light | 318×319, still, 17043 B |
-| [`context-meter-panel.png`](./context-meter-panel.png) | Context ring, panel open (92% used) | 504×460, still, 21393 B |
+| [`context-meter-panel.png`](./context-meter-panel.png) | Context ring, panel open (92% used) | 684×484, still, 20373 B |
 | [`session-header-strip.png`](./session-header-strip.png) | Conversation header — context strip and lineage | 904×116, still, 9241 B |
 | [`status-ladder.gif`](./status-ladder.gif) | Status ladder | 318×319, 6 frames @ 1100 ms, loop=0, 42100 B |
 | [`context-ring.gif`](./context-ring.gif) | Context ring | 254×298, 7 frames @ 700 ms, loop=0, 13603 B |
@@ -79,7 +79,7 @@ The same hover card and fixture rendered against the light token sheet.
 
 `ContextMeter` after a real click on `.t3s-meterButton`, so the internal panel is open: the ring in its overloaded red state, the 92% token bar, the measured-from note, the **Compact** action, and the display toggles it hosts.
 
-- 504×460 px, 21393 bytes, dark theme, 426 distinct colours
+- 684×484 px, 20373 bytes, dark theme, 426 distinct colours
 - Regenerate: `pnpm capture -- --only meter-panel`
 
 ### `session-header-strip.png`
