@@ -4,6 +4,24 @@ T3 Code's session-context UX for [DeepSeek Harness](https://github.com/deepseek-
 a session-row context block, provider/model chip, a status pill, a per-session
 header context strip, and a context-window meter that can compact.
 
+| Session-row hover card | Context ring, panel open |
+|---|---|
+| ![Session-row hover card](assets/session-context-hover.png) | ![Context window ring with its panel open](assets/context-meter-panel.png) |
+
+| Status ladder | Context ring filling |
+|---|---|
+| ![Status rungs cycling](assets/status-ladder.gif) | ![The ring filling and turning red past 90%](assets/context-ring.gif) |
+
+| Conversation header | Light theme |
+|---|---|
+| ![Header context strip and lineage breadcrumb](assets/session-header-strip.png) | ![Hover card in the light theme](assets/session-context-hover-light.png) |
+
+> **About these images:** they are renders of this plugin's **real components**
+> (the actual `client.js`, loaded and styled through its own code path) driven by
+> fixture data with a representative DSH token sheet — **not screenshots of a
+> live DSH window**. See [`assets/README.md`](assets/README.md) for exactly how
+> each is produced, the regenerate command, and the full caveat.
+
 ## Credit
 
 The information hierarchy this plugin implements is [T3 Code](https://github.com/pingdotgg/t3code)'s:

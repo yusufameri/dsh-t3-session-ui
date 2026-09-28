@@ -344,15 +344,22 @@ describe('SessionRowLeading', () => {
 })
 
 describe('HeaderContextStrip', () => {
-  it('renders status, model, branch, workspace, approval, preset and depth', async () => {
+  it('renders status, model, branch, approval policy and context usage', async () => {
     const store = await seededStore('s1', FULL_BUNDLE)
     const html = render(components.HeaderContextStrip, { sessionId: 's1', store, t })
     assert.match(html, /Error/)
     assert.match(html, /deepseek-v4\.1-flash/)
     assert.match(html, /main/)
-    assert.match(html, /acme/)
     assert.match(html, /ask/)
-    assert.match(html, /poteto/)
+    assert.match(html, /42%/)
+  })
+
+  it('keeps the workspace, preset and depth out of the narrow header strip', async () => {
+    const store = await seededStore('s1', FULL_BUNDLE)
+    const html = render(components.HeaderContextStrip, { sessionId: 's1', store, t })
+    // Those facts live in the hover card and the lineage breadcrumb instead.
+    assert.doesNotMatch(html, /acme/)
+    assert.doesNotMatch(html, /poteto/)
   })
 
   it('renders the subagent count when present', async () => {

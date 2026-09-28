@@ -678,6 +678,13 @@ window.__ModuleLoader__.load({
       if (bundle === undefined || bundle.live !== true) return null
       const status = resolveStatus(bundle, t)
       const git = bundle.git
+      // The header is a narrow strip that already shares its row with other
+      // utilities, so it carries only what a reader needs at a glance. The
+      // workspace, agent preset, and delegation depth stay in the hover card
+      // and the lineage breadcrumb, which have room for them.
+      const stripContextLabel = Number.isFinite(bundle.tokens?.usedPercent)
+        ? formatPercent(bundle.tokens.usedPercent)
+        : undefined
       const items = [
         !prefs.showModel || bundle.model === undefined
           ? null
@@ -685,20 +692,14 @@ window.__ModuleLoader__.load({
         !prefs.showBranch || git?.branch === undefined
           ? null
           : { key: 'branch', icon: ICON.branch, text: git.branch, title: git.dirty === true ? t('row.branchDirty') : t('row.branch') },
-        !prefs.showWorkspace || bundle.cwd === undefined
-          ? null
-          : { key: 'cwd', icon: ICON.worktree, text: basename(bundle.cwd) ?? bundle.cwd, title: bundle.cwd },
         !prefs.showApproval || bundle.approval?.policy === undefined
           ? null
           : { key: 'approval', icon: ICON.approval, text: bundle.approval.policy, title: t('row.approval') },
+        !prefs.showContext || stripContextLabel === undefined
+          ? null
+          : { key: 'ctx', icon: ICON.context, text: stripContextLabel, title: t('row.context') },
         Number.isFinite(bundle.subagents?.count) && bundle.subagents.count > 0
           ? { key: 'subagents', icon: ICON.subagent, text: String(bundle.subagents.count), title: t('row.subagents') }
-          : null,
-        !prefs.showPreset || bundle.preset === undefined
-          ? null
-          : { key: 'preset', icon: ICON.preset, text: bundle.preset, title: t('row.preset') },
-        Number.isFinite(bundle.delegationDepth) && bundle.delegationDepth > 0
-          ? { key: 'depth', icon: ICON.lineage, text: String(bundle.delegationDepth), title: t('row.depth') }
           : null,
       ].filter((item) => item !== null)
       if (items.length === 0) return null
@@ -1096,6 +1097,10 @@ window.__ModuleLoader__.load({
 .t3s-dot-ready { background: var(--dsw-alias-state-success-primary); }
 .t3s-dot-failed { background: var(--dsw-alias-state-error-primary); }
 .t3s-dot-idle { background: var(--dsw-alias-state-idle-primary); }
+/* T3 ranks these two above Working and tints them distinctly: a pending
+   approval is a warning, an awaiting-input prompt is an action request. */
+.t3s-dot-approval { background: var(--dsw-alias-state-warn-primary); }
+.t3s-dot-input { background: var(--dsw-alias-brand-primary); }
 @keyframes t3s-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .t3s-dot-working { animation: none; } }
 
@@ -1104,14 +1109,16 @@ window.__ModuleLoader__.load({
 .t3s-pill-failed { color: var(--dsw-alias-state-error-primary); }
 .t3s-pill-working { color: var(--dsw-alias-brand-primary); }
 .t3s-pill-ready { color: var(--dsw-alias-state-success-primary); }
+.t3s-pill-approval { color: var(--dsw-alias-state-warn-primary); }
+.t3s-pill-input { color: var(--dsw-alias-brand-primary); }
 
 .t3s-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .t3s-chipLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.t3s-strip { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 11px; color: var(--dsw-alias-label-secondary); }
-.t3s-stripItem { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
-.t3s-stripIcon { display: inline-flex; color: var(--dsw-alias-label-secondary); opacity: .8; }
-.t3s-stripText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16ch; }
+.t3s-strip { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; overflow: hidden; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.t3s-stripItem { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.t3s-stripIcon { display: inline-flex; flex: 0 0 auto; color: var(--dsw-alias-label-secondary); opacity: .8; }
+.t3s-stripText { flex: 0 0 auto; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .t3s-meter { position: relative; display: inline-flex; align-items: center; }
 .t3s-meterButton { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border: 0; border-radius: 999px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; font-size: 11px; }
