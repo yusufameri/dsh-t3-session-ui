@@ -295,6 +295,173 @@ function deriveTurnPhase(session) {
   return { phase, error }
 }
 
+// ------------------------------------------------------------- live session state
+
+/**
+ * Resolve the Session id a scoped host event belongs to.
+ *
+ * DSH dispatches `agent/status`, `approval/request`, and `user-questions/request`
+ * with `this: Scoped<Agent>`, so the subject is the agent whose `id` is the
+ * Session id. The probes are deliberately generous and return undefined rather
+ * than guessing, because an unresolvable id must only cost a status rung — it
+ * must never attribute one session's work to another.
+ *
+ * @param scoped - The listener's `this`.
+ * @param payload - The event payload, which may carry the agent.
+ * @returns a Session id, or undefined when it cannot be established.
+ */
+function resolveEventSessionId(scoped, payload) {
+  const candidates = [
+    scoped?.id,
+    scoped?.agent?.id,
+    payload?.agent?.id,
+    payload?.sessionId,
+    payload?.session?.id,
+  ]
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate !== '') return candidate
+  }
+  return undefined
+}
+
+/**
+ * Live per-session state assembled from host events.
+ *
+ * The session log alone cannot answer "is this waiting on the human", because a
+ * pending approval and a pending question are process-local, not durable. They
+ * ARE observable as waterfalls: a listener wraps `next()` and therefore knows
+ * exactly how long the ask is outstanding. This tracker keeps those counts plus
+ * the agent's running flag, which is the cheapest accurate liveness signal.
+ *
+ * @returns the tracker: `wire(ctx)` attaches listeners, `read(id)` snapshots.
+ */
+function createLiveState() {
+  /** @type {Map<string, {running: boolean, approvals: number, questions: number, error?: string}>} */
+  const sessions = new Map()
+  /** Sessions seen running at least once, so `running: false` stays meaningful. */
+  const known = new Set()
+
+  /**
+   * Read (creating on demand) one session's mutable state.
+   *
+   * @param sessionId - Session to read.
+   * @returns the mutable record.
+   */
+  const entryFor = (sessionId) => {
+    let entry = sessions.get(sessionId)
+    if (entry === undefined) {
+      entry = { running: false, approvals: 0, questions: 0 }
+      sessions.set(sessionId, entry)
+    }
+    return entry
+  }
+
+  /**
+   * Wrap one ask-shaped waterfall so the outstanding count brackets `next()`.
+   *
+   * @param field - Which counter to move (`approvals` or `questions`).
+   * @returns the waterfall listener.
+   */
+  const askListener = (field) =>
+    async function askWaterfall(payload, next) {
+      const sessionId = resolveEventSessionId(this, payload)
+      if (sessionId === undefined) return next()
+      const entry = entryFor(sessionId)
+      entry[field] += 1
+      try {
+        return await next()
+      } finally {
+        entry[field] = Math.max(0, entry[field] - 1)
+      }
+    }
+
+  return {
+    /**
+     * Attach the host listeners that keep the tracker current.
+     *
+     * @param ctx - The plugin's Host-side context.
+     */
+    wire(ctx) {
+      ctx.effect(
+        () =>
+          ctx.on('api-session/status', (sessionId, running) => {
+            if (typeof sessionId !== 'string' || sessionId === '') return
+            const entry = entryFor(sessionId)
+            entry.running = running === true
+            if (running === true) known.add(sessionId)
+          }),
+        'dsh-t3-session-ui: session liveness',
+      )
+      ctx.effect(
+        () =>
+          ctx.on('api-session/error', (sessionId, message) => {
+            if (typeof sessionId !== 'string' || sessionId === '') return
+            entryFor(sessionId).error = typeof message === 'string' ? message : undefined
+          }),
+        'dsh-t3-session-ui: session errors',
+      )
+      // Waterfalls: `this` is the scoped Agent, and the listener brackets the
+      // ask, so the count is exact while the human is deciding.
+      ctx.effect(() => ctx.on('approval/request', askListener('approvals')), 'dsh-t3-session-ui: pending approvals')
+      ctx.effect(() => ctx.on('user-questions/request', askListener('questions')), 'dsh-t3-session-ui: pending questions')
+      // A durable turn boundary clears a stale process-local error.
+      ctx.effect(
+        () =>
+          ctx.on('session/event', (_session, event) => {
+            if (event?.type === 'turn/start') {
+              const sessionId = resolveEventSessionId(_session, event)
+              if (sessionId === undefined) return
+              const entry = entryFor(sessionId)
+              entry.error = undefined
+              known.add(sessionId)
+            }
+          }),
+        'dsh-t3-session-ui: turn boundaries',
+      )
+    },
+
+    /**
+     * Snapshot one session's live state.
+     *
+     * @param sessionId - Session to read.
+     * @returns the counters, plus whether the session was ever seen running.
+     */
+    read(sessionId) {
+      const entry = sessions.get(sessionId)
+      return {
+        running: entry?.running === true,
+        approvals: entry?.approvals ?? 0,
+        questions: entry?.questions ?? 0,
+        error: entry?.error,
+        everRan: known.has(sessionId),
+      }
+    },
+  }
+}
+
+/**
+ * Resolve the status rung for one session, in T3 Code's precedence order:
+ * pending approval, then awaiting input, then working, then failure, then
+ * background work, then ready.
+ *
+ * @param live - The live counters for this session.
+ * @param turn - The derived turn phase, used as the fallback when no live
+ *   liveness signal has been observed for this session.
+ * @param subagentCount - Number of live children.
+ * @returns `{ kind, error }`.
+ */
+function resolveStatusKind(live, turn, subagentCount) {
+  if (live.approvals > 0) return { kind: 'approval', error: undefined }
+  if (live.questions > 0) return { kind: 'input', error: undefined }
+  const running = live.running || turn?.phase === 'running'
+  if (running) return { kind: 'working', error: undefined }
+  if (turn?.phase === 'failed' || live.error !== undefined) {
+    return { kind: 'failed', error: live.error ?? turn?.error }
+  }
+  if (subagentCount > 0) return { kind: 'monitoring', error: undefined }
+  return { kind: 'ready', error: undefined }
+}
+
 // ------------------------------------------------------------------- handlers
 
 /**
@@ -302,19 +469,22 @@ function deriveTurnPhase(session) {
  *
  * @param ctx - The plugin's Host-side context.
  * @param config - Resolved plugin configuration.
+ * @param liveState - Live per-session state assembled from host events.
  * @returns a method table addressed by the route.
  */
-function buildApi(ctx, config) {
-  const hostFacts = () => {
-    const raw = attempt(() => hostname()) ?? 'unknown'
+function buildApi(ctx, config, liveState) {
+  const hostFacts = async () => {
+    // Every probe is awaited: `attempt` is async, and an unawaited one would
+    // serialise to `{}` (or stringify a Promise into the machine label).
+    const raw = (await attempt(() => hostname())) ?? 'unknown'
     return {
       hostname: raw,
       machineLabel: config.machineLabel !== '' ? config.machineLabel : friendlyMachineLabel(raw),
       machineLabelIsCustom: config.machineLabel !== '',
-      platform: attempt(() => platform()),
-      arch: attempt(() => arch()),
-      release: attempt(() => release()),
-      home: attempt(() => homedir()),
+      platform: await attempt(() => platform()),
+      arch: await attempt(() => arch()),
+      release: await attempt(() => release()),
+      home: await attempt(() => homedir()),
       node: process.version,
       pluginVersion: config.pluginVersion,
     }
@@ -335,16 +505,25 @@ function buildApi(ctx, config) {
       // A session that is not live in this process is still worth answering
       // for: the row may belong to another generation. Report non-live rather
       // than erroring, so the Client half renders the offline state.
-      return { sessionId, live: false, machine: hostFacts() }
+      const offlineLive = liveState.read(sessionId)
+      return {
+        sessionId,
+        live: false,
+        machine: await hostFacts(),
+        status: { kind: offlineLive.running ? 'working' : 'offline', error: offlineLive.error },
+      }
     }
 
     const header = session.header ?? {}
     const cwd = typeof header.cwd === 'string' ? header.cwd : undefined
-    const requestContext = attempt(() => session.requestContext())
-    const requestHeader = attempt(() => session.requestHeader())
-    const phase = attempt(() => deriveTurnPhase(session))
+    // Every probe below MUST be awaited: `attempt` is async, so a missing
+    // `await` would serialise a Promise to `{}` in the wire bundle and the
+    // Client would silently render nothing for that fact.
+    const requestContext = await attempt(() => session.requestContext())
+    const requestHeader = await attempt(() => session.requestHeader())
+    const phase = await attempt(() => deriveTurnPhase(session))
 
-    const tokens = attempt(() => {
+    const tokens = await attempt(() => {
       const meter = ctx.get('tokenMeter')
       if (meter === undefined || typeof meter.measure !== 'function') return undefined
       const measurement = meter.measure(session)
@@ -363,14 +542,14 @@ function buildApi(ctx, config) {
       }
     })
 
-    const approval = attempt(() => {
+    const approval = await attempt(() => {
       const service = ctx.get('approval')
       if (service === undefined || typeof service.overrideOf !== 'function') return undefined
       const policy = service.overrideOf(session)
       return policy === undefined ? undefined : { policy }
     })
 
-    const subagents = attempt(() => {
+    const subagents = await attempt(() => {
       const service = ctx.get('subagents')
       if (service === undefined || typeof service.listChildren !== 'function') return undefined
       return service.listChildren(sessionId).then((children) => ({
@@ -378,7 +557,7 @@ function buildApi(ctx, config) {
       }))
     })
 
-    const goal = attempt(() => {
+    const goal = await attempt(() => {
       const agents = ctx.get('agents')
       const agent = agents?.get?.(sessionId)
       if (agent === undefined) return undefined
@@ -391,10 +570,14 @@ function buildApi(ctx, config) {
 
     const workspaceName = cwd === undefined ? undefined : cwd.split('/').filter(Boolean).pop()
 
+    const live = liveState.read(sessionId)
+    const subagentCount = subagents?.count ?? 0
+    const status = resolveStatusKind(live, phase, subagentCount)
+
     return {
       sessionId,
       live: true,
-      machine: hostFacts(),
+      machine: await hostFacts(),
       cwd,
       workspaceName,
       git: await probeGit(cwd),
@@ -408,8 +591,17 @@ function buildApi(ctx, config) {
       origin: header.origin,
       isSeeded: header.isSeeded,
       createdAt: header.createdAt,
-      seq: attempt(() => session.seq),
+      seq: await attempt(() => session.seq),
       turn: phase,
+      // The resolved rung is computed here because only the Host sees the
+      // process-local approval and question waterfalls; the Client localizes it.
+      status: {
+        kind: status.kind,
+        error: status.error,
+        running: live.running,
+        pendingApprovals: live.approvals,
+        awaitingInput: live.questions,
+      },
       approval: await approval,
       subagents: await subagents,
       goal: await goal,
@@ -458,7 +650,16 @@ function resolveConfig(config) {
 // Pure helpers exported for the package's own tests. They are internal: the
 // Loader only consumes `name`, `inject`, and `apply`, and nothing else in DSH
 // should depend on these signatures.
-export { deriveTurnPhase, friendlyMachineLabel, isTrustedRequest, probeGit, resolveConfig }
+export {
+  createLiveState,
+  deriveTurnPhase,
+  friendlyMachineLabel,
+  isTrustedRequest,
+  probeGit,
+  resolveConfig,
+  resolveEventSessionId,
+  resolveStatusKind,
+}
 
 /**
  * Mount the Host half: one fenced JSON RPC route on DSH's web server.
@@ -468,7 +669,9 @@ export { deriveTurnPhase, friendlyMachineLabel, isTrustedRequest, probeGit, reso
  */
 export function apply(ctx, config) {
   const resolved = resolveConfig(config)
-  const api = buildApi(ctx, resolved)
+  const liveState = createLiveState()
+  liveState.wire(ctx)
+  const api = buildApi(ctx, resolved, liveState)
 
   ctx.effect(
     () =>

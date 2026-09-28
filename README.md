@@ -21,12 +21,40 @@ session outside a git work tree simply has no branch row.
 
 | Surface | Seat | Shows |
 |---|---|---|
-| Row hover card | `sidebar.session.row.hover` | Status, machine, workspace, branch (+ dirty), worktree, model · provider, agent preset, parent session, approval policy, context usage, and the error line |
+| Row hover card | `sidebar.session.row.hover` | Status, machine, workspace, branch (+ dirty), worktree, model · provider, agent preset, parent session, delegation depth, approval policy, context usage, and the error line |
 | Row chip | `sidebar.session.row.leading` | The model as the row's leading cell, with a status dot |
+| Row hover action | `sidebar.workspaces.session.row.action` | Copy the context bundle, beside the shipped archive and pin buttons |
 | Header strip | `conversation.session.header.utilities` | Status, model, branch, workspace, approval policy, subagent count, preset, delegation depth |
-| Context ring | `conversation.input.activity` | Context-window percentage as a ring (red past 90%) that expands into a panel with token counts, a progress bar, and a **Compact** button |
+| Header breadcrumb | `conversation.session.header.lineage` | Reproduces the session title and adds parent, preset, and depth chips |
+| Context ring | `conversation.input.activity` | Context-window percentage as a ring (red past 90%) that expands into a panel with token counts, a progress bar, a **Compact** button, and the display settings |
 | Copy action | `conversation.session.header.actions` | Copy the whole context bundle as JSON |
 | Row menu items | `sidebar.workspaces.session.menu.item` | Copy context as JSON, copy branch name, copy working directory |
+
+### Status ladder
+
+The rung is resolved on the **Host**, in T3 Code's precedence order:
+
+| Rung | How DSH reports it |
+|---|---|
+| Pending approval | The `approval/request` waterfall is bracketed around `next()`, so the rung is lit exactly while the human is deciding |
+| Awaiting input | The `user-questions/request` waterfall, bracketed the same way |
+| Working | The `api-session/status` liveness event, plus an open `turn/start` in the session log |
+| Error | A failed `turn/end`, or `api-session/error` raised outside a turn |
+| Subagent work | `ctx.subagents.listChildren(sessionId)` |
+| Ready | None of the above |
+
+Approval and input are process-local rather than durable, which is why they are
+read from the waterfalls instead of the session log: a listener that wraps
+`next()` knows precisely how long an ask is outstanding.
+
+### Display settings
+
+The context ring's panel carries the display preferences, stored per browser
+under `dsh.t3-session-ui.prefs.v1`: a toggle per fact (machine, workspace,
+branch, model, preset, approval, context) and a **machine label** override that
+wins over the Host's prettified hostname. They stay browser-side deliberately —
+they change only this plugin's rendering and must work without a Host round
+trip, and one Host is shared by every connected browser.
 
 The context ring occupies `conversation.input.activity`, which is **empty in a
 stock DSH** — it adds a control rather than replacing a shipped one. It expands
@@ -71,25 +99,18 @@ Where each fact comes from:
 
 | Fact | Source |
 |---|---|
-| Machine label | `os.hostname()`, prettified (`Shimas-MacBook-Pro.local` → `Shima's MacBook Pro`), overridable by config |
+| Machine label | `os.hostname()`, prettified (`Shimas-MacBook-Pro.local` → `Shima's MacBook Pro`), overridable by config or by the display settings |
 | Working directory, preset, parent session, delegation depth | `Session.header` |
 | Provider, model, context-window size | `Session.requestContext()` |
 | Branch, dirty state, worktree | `git` run in the session's own directory, cached for 5s |
 | Tokens used | `ctx.tokenMeter.measure(session)` |
-| Turn state | The session's own `turn/start` / `turn/end` events |
+| Liveness and pending asks | `api-session/status`, `api-session/error`, and the `approval/request` / `user-questions/request` waterfalls |
 | Subagent fan-out | `ctx.subagents.listChildren(sessionId)` |
 | Approval policy | `ctx.approval.overrideOf(session)` |
 
-### Status ladder, and one honest gap
-
-T3 Code ranks **pending approval** and **awaiting input** above *Working*. DSH
-cannot report either from the Host: a pending approval and an awaiting-input
-prompt live in Client chat state that these seats do not receive, and neither
-appears in `SessionSnapshot`. So the ladder here is the observable subset —
-*failed → working → subagent fan-out → ready* — and the approval **policy** is
-reported as its own row rather than mislabelled as a pending request.
-
 ## Configuration
+
+The plugin reads one optional setting from the bundle patch:
 
 ```yaml
 - id: t3-session-ui
@@ -98,6 +119,8 @@ reported as its own row rather than mislabelled as a pending request.
     machineLabel: "Shima's MacBook Pro"   # optional; defaults to the prettified hostname
 ```
 
+Everything else is a per-browser display preference, set from the context ring's panel.
+
 ## Development
 
 Plain ESM, no build step. The Client half is loaded as-is by DSH's client-module
@@ -105,12 +128,27 @@ loader, so editing `client.js` takes effect on the next page load.
 
 ```sh
 pnpm install
-pnpm test        # 63 tests: host logic + static rendering of every surface
+pnpm test        # 101 tests
 ```
 
-The tests run without DSH: the Client suite stubs `window.__ModuleLoader__` and
-renders each surface to static markup against a fixture bundle, and the Host
-suite exercises real temporary git repositories.
+The suite runs without DSH and covers three layers:
+
+- `test/host.test.js` — the host helpers, including real temporary git
+  repositories (clean, dirty, untracked-only, detached HEAD, linked worktree).
+- `test/route.test.js` — the real `apply()` driven against a fake Cordis
+  context, invoking the HTTP handler and asserting on its **wire** output. This
+  layer exists because an unawaited probe serialises to `{}`, which no test that
+  inspects the handler's in-memory object can see.
+- `test/client.test.js` — the Client half loaded through a stubbed
+  `window.__ModuleLoader__` and rendered to static markup against a fixture
+  bundle.
+
+## Releases
+
+**0.1.1** fixed a defect introduced in 0.1.0: several Host probes were not
+awaited, so `provider`, `model`, `contextWindow`, `turn`, the token counts, and
+the whole machine identity serialised to `{}` on the wire. The route-level test
+layer above was added so that failure mode cannot return.
 
 ## Requirements
 

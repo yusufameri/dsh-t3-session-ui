@@ -57,12 +57,25 @@ window.__ModuleLoader__.load({
       'row.context': 'Context',
       'row.error': 'Error occurred',
       'row.offline': 'Not running in this process',
+      'status.approval': 'Approval',
+      'status.input': 'Awaiting input',
       'status.working': 'Working',
       'status.ready': 'Ready',
       'status.failed': 'Error',
       'status.offline': 'Offline',
       'status.subagents': '{count} subagent',
       'status.subagentsPlural': '{count} subagents',
+      'prefs.title': 'Display',
+      'prefs.showMachine': 'Machine',
+      'prefs.showWorkspace': 'Workspace',
+      'prefs.showBranch': 'Branch',
+      'prefs.showModel': 'Model',
+      'prefs.showPreset': 'Agent preset',
+      'prefs.showApproval': 'Approval policy',
+      'prefs.showContext': 'Context usage',
+      'prefs.machineLabel': 'Machine label',
+      'prefs.machineLabelPlaceholder': 'Defaults to this machine’s hostname',
+      'prefs.reset': 'Reset',
       'meter.title': 'Context Window',
       'meter.aria': 'Context window, {percent} used',
       'meter.ariaTokens': 'Context window, {tokens} tokens used',
@@ -102,12 +115,25 @@ window.__ModuleLoader__.load({
       'row.context': '上下文',
       'row.error': '发生错误',
       'row.offline': '未在当前进程中运行',
+      'status.approval': '待审批',
+      'status.input': '等待输入',
       'status.working': '运行中',
       'status.ready': '就绪',
       'status.failed': '错误',
       'status.offline': '离线',
       'status.subagents': '{count} 个子代理',
       'status.subagentsPlural': '{count} 个子代理',
+      'prefs.title': '显示',
+      'prefs.showMachine': '机器',
+      'prefs.showWorkspace': '工作区',
+      'prefs.showBranch': '分支',
+      'prefs.showModel': '模型',
+      'prefs.showPreset': '代理预设',
+      'prefs.showApproval': '审批策略',
+      'prefs.showContext': '上下文用量',
+      'prefs.machineLabel': '机器名称',
+      'prefs.machineLabelPlaceholder': '默认使用本机主机名',
+      'prefs.reset': '重置',
       'meter.title': '上下文窗口',
       'meter.aria': '上下文窗口，已用 {percent}',
       'meter.ariaTokens': '上下文窗口，已用 {tokens} token',
@@ -182,6 +208,112 @@ window.__ModuleLoader__.load({
       return String(template).replace(/\{(\w+)\}/g, (match, key) =>
         Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match,
       )
+    }
+
+    // ---------------------------------------------------------- preferences
+
+    /** Storage key holding this plugin's display preferences. */
+    const PREFS_KEY = 'dsh.t3-session-ui.prefs.v1'
+
+    /** Default display preferences: everything shown, hostname label. */
+    const DEFAULT_PREFS = {
+      machineLabel: '',
+      showMachine: true,
+      showWorkspace: true,
+      showBranch: true,
+      showModel: true,
+      showPreset: true,
+      showApproval: true,
+      showContext: true,
+    }
+
+    /**
+     * Coerce a stored value into the known preference shape.
+     *
+     * A preference is user data read from `localStorage`, so it is treated as
+     * untrusted: unknown keys are dropped and booleans are type-checked rather
+     * than trusted, so a hand-edited store cannot disable a surface by accident.
+     *
+     * @param raw - Parsed stored value, or undefined.
+     * @returns a complete preference record.
+     */
+    function normalizePrefs(raw) {
+      if (raw === null || typeof raw !== 'object') return { ...DEFAULT_PREFS }
+      const prefs = { ...DEFAULT_PREFS }
+      if (typeof raw.machineLabel === 'string') prefs.machineLabel = raw.machineLabel
+      for (const key of Object.keys(DEFAULT_PREFS)) {
+        if (key === 'machineLabel') continue
+        if (typeof raw[key] === 'boolean') prefs[key] = raw[key]
+      }
+      return prefs
+    }
+
+    /**
+     * A tiny observable preference store backed by `localStorage`.
+     *
+     * Display toggles stay browser-side on purpose: they change only this
+     * plugin's rendering, they must work without a Host round trip, and DSH
+     * shares one Host across every connected browser.
+     *
+     * @returns `{ subscribe, get, set, reset }`.
+     */
+    function createPrefsStore() {
+      let prefs = DEFAULT_PREFS
+      try {
+        const stored = window.localStorage?.getItem(PREFS_KEY)
+        if (typeof stored === 'string') prefs = normalizePrefs(JSON.parse(stored))
+      } catch {
+        // Unreadable or absent storage falls back to the defaults.
+      }
+      const listeners = new Set()
+      const emit = () => {
+        for (const listener of [...listeners]) listener()
+      }
+      const persist = () => {
+        try {
+          window.localStorage?.setItem(PREFS_KEY, JSON.stringify(prefs))
+        } catch {
+          // A denied or full store only costs persistence, not rendering.
+        }
+      }
+      return {
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => listeners.delete(listener)
+        },
+        get: () => prefs,
+        set(patch) {
+          prefs = normalizePrefs({ ...prefs, ...patch })
+          persist()
+          emit()
+        },
+        reset() {
+          prefs = { ...DEFAULT_PREFS }
+          persist()
+          emit()
+        },
+      }
+    }
+
+    /** A never-firing subscription, used when no preference store is bound. */
+    const NOOP_SUBSCRIBE = () => () => {}
+
+    /** Stable read of the defaults, so a storeless render has a constant snapshot. */
+    const readDefaultPrefs = () => DEFAULT_PREFS
+
+    /**
+     * Subscribe a surface to the preference store.
+     *
+     * Tolerates an absent store so a surface renders with the defaults when a
+     * seat is mounted without one (which is how the package's tests render).
+     *
+     * @param store - The preference store, when bound.
+     * @returns the current preferences, re-read on every change.
+     */
+    function usePrefs(store) {
+      const subscribe = store === undefined ? NOOP_SUBSCRIBE : store.subscribe
+      const read = store === undefined ? readDefaultPrefs : store.get
+      return useSyncExternalStore(subscribe, read, read)
     }
 
     // -------------------------------------------------------- context store
@@ -274,13 +406,11 @@ window.__ModuleLoader__.load({
     /**
      * Resolve the status rung for one bundle.
      *
-     * T3 Code's ladder is pending-approval, awaiting-input, working,
-     * connecting, subagent work, plan-ready, then idle/error. The DSH Host can
-     * observe the turn lifecycle, subagent fan-out, and the approval *policy*,
-     * but not a pending approval or an awaiting-input prompt — those live in
-     * Client chat state this seat does not receive — so the ladder here is the
-     * observable subset and the approval policy is reported as its own row
-     * rather than mislabelled as a pending request.
+     * The Host resolves the rung, because only it sees the process-local
+     * approval and question waterfalls; this function localizes the rung and
+     * keeps a turn-phase fallback for a bundle that predates the Host's status
+     * field. The ladder is T3 Code's order: pending approval, awaiting input,
+     * working, failure, background work, ready.
      *
      * @param bundle - The session context bundle.
      * @param t - Bound translator.
@@ -288,18 +418,39 @@ window.__ModuleLoader__.load({
      */
     function resolveStatus(bundle, t) {
       if (bundle === undefined) return { tone: 'idle', label: '…' }
-      if (bundle.live !== true) return { tone: 'idle', label: t('status.offline') }
-      const phase = bundle.turn?.phase
-      if (phase === 'running') return { tone: 'working', label: t('status.working') }
-      if (phase === 'failed') return { tone: 'failed', label: t('status.failed'), detail: bundle.turn?.error }
-      const subagents = Number(bundle.subagents?.count ?? 0)
-      if (subagents > 0) {
+      const declared = bundle.status?.kind
+      if (bundle.live !== true) {
+        if (declared === 'working') return { tone: 'working', label: t('status.working') }
+        return { tone: 'idle', label: t('status.offline') }
+      }
+      const kind = declared ?? fallbackStatusKind(bundle)
+      if (kind === 'monitoring') {
+        const count = Number(bundle.subagents?.count ?? 0)
         return {
           tone: 'monitoring',
-          label: fill(t(subagents === 1 ? 'status.subagents' : 'status.subagentsPlural'), { count: subagents }),
+          label: fill(t(count === 1 ? 'status.subagents' : 'status.subagentsPlural'), { count }),
+          detail: bundle.status?.error,
         }
       }
-      return { tone: 'ready', label: t('status.ready') }
+      return {
+        tone: kind === 'offline' ? 'idle' : kind,
+        label: t(`status.${kind}`),
+        detail: bundle.status?.error ?? bundle.turn?.error,
+      }
+    }
+
+    /**
+     * Derive a rung from the bundle's own fields, for a Host that did not send
+     * a resolved status.
+     *
+     * @param bundle - The session context bundle.
+     * @returns the rung kind.
+     */
+    function fallbackStatusKind(bundle) {
+      if (bundle.turn?.phase === 'running') return 'working'
+      if (bundle.turn?.phase === 'failed') return 'failed'
+      if (Number(bundle.subagents?.count ?? 0) > 0) return 'monitoring'
+      return 'ready'
     }
 
     // ------------------------------------------------------------- fragments
@@ -423,6 +574,7 @@ window.__ModuleLoader__.load({
     function SessionRowHover(props) {
       const { sessionId, store, t } = props
       const entry = useSessionContext(store, sessionId)
+      const prefs = usePrefs(props.prefs)
       if (typeof sessionId !== 'string' || sessionId === '') return null
       const bundle = entry?.value
       if (bundle === undefined) return null
@@ -444,29 +596,42 @@ window.__ModuleLoader__.load({
           ? formatTokens(bundle.tokens.used)
           : undefined
       const rows = [
-        bundle.machine?.machineLabel === undefined
+        !prefs.showMachine || bundle.machine?.machineLabel === undefined
           ? null
-          : h(ContextRow, { key: 'machine', icon: ICON.machine, value: bundle.machine.machineLabel }),
-        bundle.cwd === undefined
+          : h(ContextRow, {
+              key: 'machine',
+              icon: ICON.machine,
+              value: prefs.machineLabel !== '' ? prefs.machineLabel : bundle.machine.machineLabel,
+            }),
+        !prefs.showWorkspace || bundle.cwd === undefined
           ? null
           : h(ContextRow, { key: 'ws', icon: ICON.worktree, value: bundle.workspaceName ?? bundle.cwd, title: bundle.cwd }),
-        branchLabel === undefined ? null : h(ContextRow, { key: 'branch', icon: ICON.branch, value: branchLabel }),
+        !prefs.showBranch || branchLabel === undefined
+          ? null
+          : h(ContextRow, { key: 'branch', icon: ICON.branch, value: branchLabel }),
         git?.worktree === undefined ? null : h(ContextRow, { key: 'wt', icon: ICON.worktree, value: t('row.worktree') }),
-        bundle.model === undefined
+        !prefs.showModel || bundle.model === undefined
           ? null
           : h(ContextRow, {
               key: 'model',
               icon: ICON.model,
               value: bundle.provider === undefined ? bundle.model : `${bundle.model} · ${bundle.provider}`,
             }),
-        bundle.preset === undefined ? null : h(ContextRow, { key: 'preset', icon: ICON.preset, value: bundle.preset }),
+        !prefs.showPreset || bundle.preset === undefined
+          ? null
+          : h(ContextRow, { key: 'preset', icon: ICON.preset, value: bundle.preset }),
         bundle.parentSession === undefined
           ? null
           : h(ContextRow, { key: 'parent', icon: ICON.lineage, value: bundle.parentSession }),
-        bundle.approval?.policy === undefined
+        Number.isFinite(bundle.delegationDepth) && bundle.delegationDepth > 0
+          ? h(ContextRow, { key: 'depth', icon: ICON.lineage, value: String(bundle.delegationDepth) })
+          : null,
+        !prefs.showApproval || bundle.approval?.policy === undefined
           ? null
           : h(ContextRow, { key: 'approval', icon: ICON.approval, value: bundle.approval.policy }),
-        contextLabel === undefined ? null : h(ContextRow, { key: 'ctx', icon: ICON.context, value: contextLabel }),
+        !prefs.showContext || contextLabel === undefined
+          ? null
+          : h(ContextRow, { key: 'ctx', icon: ICON.context, value: contextLabel }),
       ].filter((row) => row !== null)
       return h(
         'div',
@@ -507,26 +672,31 @@ window.__ModuleLoader__.load({
     function HeaderContextStrip(props) {
       const { sessionId, store, t } = props
       const entry = useSessionContext(store, sessionId)
+      const prefs = usePrefs(props.prefs)
       const bundle = entry?.value
       if (typeof sessionId !== 'string' || sessionId === '') return null
       if (bundle === undefined || bundle.live !== true) return null
       const status = resolveStatus(bundle, t)
       const git = bundle.git
       const items = [
-        bundle.model === undefined ? null : { key: 'model', icon: ICON.model, text: bundle.model, title: t('row.model') },
-        git?.branch === undefined
+        !prefs.showModel || bundle.model === undefined
+          ? null
+          : { key: 'model', icon: ICON.model, text: bundle.model, title: t('row.model') },
+        !prefs.showBranch || git?.branch === undefined
           ? null
           : { key: 'branch', icon: ICON.branch, text: git.branch, title: git.dirty === true ? t('row.branchDirty') : t('row.branch') },
-        bundle.cwd === undefined
+        !prefs.showWorkspace || bundle.cwd === undefined
           ? null
           : { key: 'cwd', icon: ICON.worktree, text: basename(bundle.cwd) ?? bundle.cwd, title: bundle.cwd },
-        bundle.approval?.policy === undefined
+        !prefs.showApproval || bundle.approval?.policy === undefined
           ? null
           : { key: 'approval', icon: ICON.approval, text: bundle.approval.policy, title: t('row.approval') },
         Number.isFinite(bundle.subagents?.count) && bundle.subagents.count > 0
           ? { key: 'subagents', icon: ICON.subagent, text: String(bundle.subagents.count), title: t('row.subagents') }
           : null,
-        bundle.preset === undefined ? null : { key: 'preset', icon: ICON.preset, text: bundle.preset, title: t('row.preset') },
+        !prefs.showPreset || bundle.preset === undefined
+          ? null
+          : { key: 'preset', icon: ICON.preset, text: bundle.preset, title: t('row.preset') },
         Number.isFinite(bundle.delegationDepth) && bundle.delegationDepth > 0
           ? { key: 'depth', icon: ICON.lineage, text: String(bundle.delegationDepth), title: t('row.depth') }
           : null,
@@ -686,6 +856,7 @@ window.__ModuleLoader__.load({
               compactError === undefined
                 ? null
                 : h('span', { className: 't3s-panelError' }, fill(t('meter.compactFailed'), { message: compactError })),
+              h(PrefsPanel, { t, prefs: props.prefs }),
             )
           : null,
       )
@@ -716,6 +887,148 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * `sidebar.workspaces.session.row.action` — the row's hover strip action.
+     *
+     * One icon button (the seat renders one button and owns its action), which
+     * copies the whole context bundle. It sits with the shipped `archive` and
+     * `pin` buttons and needs no propagation handling: clicks inside that strip
+     * stay in the strip.
+     */
+    function RowContextAction(props) {
+      const { sessionId, store, t } = props
+      const [copied, setCopied] = useState(false)
+      const entry = useSessionContext(store, sessionId)
+      if (typeof sessionId !== 'string' || sessionId === '') return null
+      const onClick = async () => {
+        const bundle = entry?.value ?? (await call('sessionContext', { sessionId }).catch(() => undefined))
+        if (bundle === undefined) return
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(bundle, null, 2))
+          setCopied(true)
+          window.setTimeout(() => setCopied(false), 1400)
+        } catch {
+          /* clipboard denied: leave the button unchanged */
+        }
+      }
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: `t3s-iconButton${copied ? ' t3s-iconButtonDone' : ''}`,
+          title: copied ? t('action.copied') : t('action.copy'),
+          'aria-label': t('action.copy'),
+          onClick,
+        },
+        ICON.copy,
+      )
+    }
+
+    /**
+     * `conversation.session.header.lineage` — T3 Code's richer breadcrumb.
+     *
+     * The seat exists to *replace* one Session breadcrumb title, and it hands
+     * the occupant exactly what the shipped renderer needs: the display title
+     * and an optional navigate callback. This renderer therefore reproduces the
+     * title faithfully (as a button when navigation is offered, as text
+     * otherwise) and only adds lineage detail — parent session, agent preset,
+     * delegation depth — beside it when the bundle carries any.
+     */
+    function HeaderLineage(props) {
+      const { lineageSessionId, displayTitle, openTitle, store, t } = props
+      const entry = useSessionContext(store, lineageSessionId)
+      const bundle = entry?.value
+      const title =
+        typeof openTitle === 'function'
+          ? h('button', { type: 'button', className: 't3s-lineageTitleButton', onClick: openTitle }, displayTitle)
+          : h('span', { className: 't3s-lineageTitle' }, displayTitle)
+      const chips = []
+      if (bundle?.parentSession !== undefined) {
+        chips.push({ key: 'parent', icon: ICON.lineage, text: bundle.parentSession, title: t('row.parent') })
+      }
+      if (bundle?.preset !== undefined) {
+        chips.push({ key: 'preset', icon: ICON.preset, text: bundle.preset, title: t('row.preset') })
+      }
+      if (Number.isFinite(bundle?.delegationDepth) && bundle.delegationDepth > 0) {
+        chips.push({ key: 'depth', icon: ICON.lineage, text: `d${bundle.delegationDepth}`, title: t('row.depth') })
+      }
+      if (displayTitle === undefined && chips.length === 0) return null
+      return h(
+        'span',
+        { className: 't3s-lineage' },
+        title,
+        chips.length === 0
+          ? null
+          : h(
+              'span',
+              { className: 't3s-strip t3s-lineageChips' },
+              chips.map((chip) =>
+                h(
+                  'span',
+                  { key: chip.key, className: 't3s-stripItem', title: chip.title },
+                  h('span', { className: 't3s-stripIcon', 'aria-hidden': 'true' }, chip.icon),
+                  h('span', { className: 't3s-stripText' }, chip.text),
+                ),
+              ),
+            ),
+      )
+    }
+
+    /** One labelled checkbox row in the meter's display panel. */
+    function PrefToggle(props) {
+      return h(
+        'label',
+        { className: 't3s-prefRow' },
+        h('input', {
+          type: 'checkbox',
+          checked: props.checked,
+          onChange: (event) => props.onChange(event.target.checked),
+        }),
+        h('span', { className: 't3s-prefLabel' }, props.label),
+      )
+    }
+
+    /**
+     * The display preferences panel: which facts the surfaces report, and an
+     * optional machine-label override that wins over the Host's prettified
+     * hostname.
+     */
+    function PrefsPanel(props) {
+      const { t, prefs } = props
+      const value = usePrefs(prefs)
+      const set = useCallback((patch) => prefs?.set(patch), [prefs])
+      const toggleKeys = ['showMachine', 'showWorkspace', 'showBranch', 'showModel', 'showPreset', 'showApproval', 'showContext']
+      return h(
+        'span',
+        { className: 't3s-prefs' },
+        h(
+          'span',
+          { className: 't3s-panelHead' },
+          h('span', { className: 't3s-panelTitle' }, t('prefs.title')),
+          h(
+            'button',
+            { type: 'button', className: 't3s-linkButton', onClick: () => prefs?.reset() },
+            t('prefs.reset'),
+          ),
+        ),
+        toggleKeys.map((key) =>
+          h(PrefToggle, {
+            key,
+            checked: value[key],
+            label: t(`prefs.${key}`),
+            onChange: (next) => set({ [key]: next }),
+          }),
+        ),
+        h('input', {
+          type: 'text',
+          className: 't3s-prefInput',
+          value: value.machineLabel,
+          placeholder: t('prefs.machineLabelPlaceholder'),
+          'aria-label': t('prefs.machineLabel'),
+          onChange: (event) => set({ machineLabel: event.target.value }),
+        }),
+      )
+    }
     /**
      * `sidebar.workspaces.session.menu.item` — per-session context actions,
      * the DSH analogue of T3's right-click thread menu entries.
@@ -829,6 +1142,21 @@ window.__ModuleLoader__.load({
 .t3s-menu { display: flex; flex-direction: column; }
 .t3s-menuItem { display: block; width: 100%; padding: 6px 10px; border: 0; background: transparent; color: var(--dsw-alias-label-primary); text-align: left; cursor: pointer; font: inherit; font-size: 12px; border-radius: 6px; }
 .t3s-menuItem:hover { background: var(--dsw-alias-bg-layer-2); }
+
+.t3s-iconButtonDone { color: var(--dsw-alias-state-success-primary); }
+
+.t3s-lineage { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.t3s-lineageTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t3s-lineageTitleButton { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.t3s-lineageTitleButton:hover { text-decoration: underline; }
+.t3s-lineageChips { flex: 0 0 auto; }
+
+.t3s-prefs { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--dsw-alias-border-l1); padding-top: 8px; margin-top: 2px; }
+.t3s-prefRow { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.t3s-prefRow input { accent-color: var(--dsw-alias-brand-primary); }
+.t3s-prefLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t3s-prefInput { width: 100%; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 11px; }
+.t3s-linkButton { padding: 0; border: 0; background: transparent; color: var(--dsw-alias-brand-primary); font: inherit; font-size: 11px; cursor: pointer; }
 `
 
     // ------------------------------------------------------------------ apply
@@ -841,19 +1169,20 @@ window.__ModuleLoader__.load({
     const inject = ['slots', 'locale']
 
     /**
-     * Bind a surface to the plugin's dictionary and shared store.
+     * Bind a surface to the plugin's dictionary, shared store, and preferences.
      *
      * @param Component - The surface to bind.
      * @param ctx - The plugin's Client context.
      * @param store - The shared session-context store.
-     * @returns a component receiving `t` and `store`.
+     * @param prefs - The preference store.
+     * @returns a component receiving `t`, `store`, and `prefs`.
      */
-    function bound(Component, ctx, store) {
+    function bound(Component, ctx, store, prefs) {
       return function BoundSurface(props) {
         const [, force] = useState(0)
         useEffect(() => ctx.on('locale/change', () => force((value) => value + 1)), [ctx])
         const t = ctx.locale.bind(NS)
-        return h(Component, Object.assign({}, props, { t, store }))
+        return h(Component, Object.assign({}, props, { t, store, prefs }))
       }
     }
 
@@ -874,28 +1203,41 @@ window.__ModuleLoader__.load({
       }, 'dsh-t3-session-ui: styles')
 
       const store = createContextStore(ctx)
+      const prefs = createPrefsStore()
 
       // Additive seats: each registration names its own id, so it sits beside
       // the shipped entries instead of replacing one.
       ctx.slots.inject('sidebar.session.row.hover', () =>
-        ctx.slots.register({ name: 'sidebar.session.row.hover', id: 't3s-hover', order: 20, locale: NS }, bound(SessionRowHover, ctx, store)),
+        ctx.slots.register({ name: 'sidebar.session.row.hover', id: 't3s-hover', order: 20, locale: NS }, bound(SessionRowHover, ctx, store, prefs)),
       )
       ctx.slots.inject('sidebar.session.row.leading', () =>
-        ctx.slots.register({ name: 'sidebar.session.row.leading', id: 't3s-leading', order: 20, locale: NS }, bound(SessionRowLeading, ctx, store)),
+        ctx.slots.register({ name: 'sidebar.session.row.leading', id: 't3s-leading', order: 20, locale: NS }, bound(SessionRowLeading, ctx, store, prefs)),
+      )
+      ctx.slots.inject('sidebar.workspaces.session.row.action', () =>
+        ctx.slots.register(
+          { name: 'sidebar.workspaces.session.row.action', id: 't3s-row-copy', order: 50, locale: NS },
+          bound(RowContextAction, ctx, store, prefs),
+        ),
       )
       ctx.slots.inject('conversation.session.header.utilities', () =>
-        ctx.slots.register({ name: 'conversation.session.header.utilities', id: 't3s-strip', order: 20, locale: NS }, bound(HeaderContextStrip, ctx, store)),
+        ctx.slots.register({ name: 'conversation.session.header.utilities', id: 't3s-strip', order: 20, locale: NS }, bound(HeaderContextStrip, ctx, store, prefs)),
       )
       ctx.slots.inject('conversation.session.header.actions', () =>
-        ctx.slots.register({ name: 'conversation.session.header.actions', id: 't3s-copy', order: 20, locale: NS }, bound(CopyContextAction, ctx, store)),
+        ctx.slots.register({ name: 'conversation.session.header.actions', id: 't3s-copy', order: 20, locale: NS }, bound(CopyContextAction, ctx, store, prefs)),
+      )
+      // A `single` seat whose documented purpose is to REPLACE one breadcrumb
+      // title, so it is occupied at priority -1; the renderer reproduces the
+      // shipped title from the props it is handed.
+      ctx.slots.inject('conversation.session.header.lineage', () =>
+        ctx.slots.register({ name: 'conversation.session.header.lineage', priority: -1, locale: NS }, bound(HeaderLineage, ctx, store, prefs)),
       )
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
-        ctx.slots.register({ name: 'sidebar.workspaces.session.menu.item', id: 't3s-menu', order: 20, label: 'Session context', locale: NS }, bound(makeMenuItems(store), ctx, store)),
+        ctx.slots.register({ name: 'sidebar.workspaces.session.menu.item', id: 't3s-menu', order: 20, label: 'Session context', locale: NS }, bound(makeMenuItems(store), ctx, store, prefs)),
       )
-      // The one `single` seat: empty today, so the ring adds rather than
-      // replaces. The seat yields composer width while the panel is open.
+      // The composer's activity seat is empty in a stock DSH, so the ring adds
+      // rather than replaces. The seat yields composer width while open.
       ctx.slots.inject('conversation.input.activity', () =>
-        ctx.slots.register({ name: 'conversation.input.activity', priority: 0, locale: NS }, bound(ContextMeter, ctx, store)),
+        ctx.slots.register({ name: 'conversation.input.activity', priority: 0, locale: NS }, bound(ContextMeter, ctx, store, prefs)),
       )
     }
 
@@ -908,15 +1250,22 @@ window.__ModuleLoader__.load({
         HeaderContextStrip,
         ContextMeter,
         CopyContextAction,
+        RowContextAction,
+        HeaderLineage,
+        PrefsPanel,
       },
       createContextStore,
+      createPrefsStore,
+      normalizePrefs,
       makeMenuItems,
       resolveStatus,
+      fallbackStatusKind,
       formatTokens,
       formatPercent,
       basename,
       fill,
       dictionaries: { en: EN, zh: ZH },
+      defaultPrefs: DEFAULT_PREFS,
     }
 
     return { inject, apply, __internals }

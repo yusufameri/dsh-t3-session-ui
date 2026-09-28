@@ -60,6 +60,7 @@ const {
   createContextStore,
   makeMenuItems,
   resolveStatus,
+  normalizePrefs,
   formatTokens,
   formatPercent,
   basename,
@@ -245,7 +246,7 @@ describe('resolveStatus', () => {
 // --- seat registrations -----------------------------------------------------
 
 describe('apply', () => {
-  it('registers all six surfaces against the agreed seats', () => {
+  it('registers all eight surfaces against the agreed seats', () => {
     const registered = []
     const ctx = {
       effect: (fn) => fn(),
@@ -266,15 +267,20 @@ describe('apply', () => {
       [
         'conversation.input.activity',
         'conversation.session.header.actions',
+        'conversation.session.header.lineage',
         'conversation.session.header.utilities',
         'sidebar.session.row.hover',
         'sidebar.session.row.leading',
         'sidebar.workspaces.session.menu.item',
+        'sidebar.workspaces.session.row.action',
       ].sort(),
     )
     assert.equal(byName.get('sidebar.session.row.hover').id, 't3s-hover')
+    assert.equal(byName.get('sidebar.workspaces.session.row.action').id, 't3s-row-copy')
     assert.equal(byName.get('conversation.input.activity').priority, 0)
-    assert.equal(registered.length, 6)
+    // The lineage seat is a documented replacement, so it shadows at -1.
+    assert.equal(byName.get('conversation.session.header.lineage').priority, -1)
+    assert.equal(registered.length, 8)
   })
 })
 
@@ -404,5 +410,162 @@ describe('SessionMenuItems', () => {
     assert.match(html, /Copy session context as JSON/)
     assert.doesNotMatch(html, /Copy branch name/)
     assert.doesNotMatch(html, /Copy working directory/)
+  })
+})
+
+// --- new surfaces and preferences -------------------------------------------
+
+describe('RowContextAction', () => {
+  it('renders one labelled icon button', async () => {
+    const store = await seededStore('s1', FULL_BUNDLE)
+    const html = render(components.RowContextAction, { sessionId: 's1', store, t })
+    assert.match(html, /aria-label="Copy session context"/)
+    assert.match(html, /<button/)
+  })
+
+  it('renders nothing without a session id', () => {
+    const store = createContextStore({ effect: (fn) => fn(), on: () => () => {} })
+    assert.equal(render(components.RowContextAction, { store, t }), '')
+  })
+})
+
+describe('HeaderLineage', () => {
+  it('reproduces the shipped title and adds lineage chips', async () => {
+    const store = await seededStore('s1', FULL_BUNDLE)
+    const html = render(components.HeaderLineage, {
+      lineageSessionId: 's1',
+      displayTitle: 'parent session',
+      store,
+      t,
+    })
+    assert.match(html, /parent session/)
+    assert.match(html, /s0/)
+    assert.match(html, /poteto/)
+    assert.match(html, /d1/)
+  })
+
+  it('renders the title as a button when navigation is offered', async () => {
+    const store = await seededStore('s1', FULL_BUNDLE)
+    const html = render(components.HeaderLineage, {
+      lineageSessionId: 's1',
+      displayTitle: 'parent session',
+      openTitle: () => {},
+      store,
+      t,
+    })
+    assert.match(html, /t3s-lineageTitleButton/)
+  })
+
+  it('falls back to the bare title when the bundle has no lineage facts', async () => {
+    const store = await seededStore('s3', { sessionId: 's3', live: true, status: { kind: 'ready' } })
+    const html = render(components.HeaderLineage, { lineageSessionId: 's3', displayTitle: 'a title', store, t })
+    assert.match(html, /a title/)
+    assert.doesNotMatch(html, /t3s-lineageChips/)
+  })
+})
+
+describe('resolveStatus from the Host contract', () => {
+  it('localizes each rung the Host can report', () => {
+    const cases = [
+      ['approval', 'Approval', 'approval'],
+      ['input', 'Awaiting input', 'input'],
+      ['working', 'Working', 'working'],
+      ['failed', 'Error', 'failed'],
+      ['ready', 'Ready', 'ready'],
+    ]
+    for (const [kind, label, tone] of cases) {
+      const status = resolveStatus({ live: true, status: { kind } }, t)
+      assert.equal(status.label, label, `label for ${kind}`)
+      assert.equal(status.tone, tone, `tone for ${kind}`)
+    }
+  })
+
+  it('surfaces the Host error detail on a failed rung', () => {
+    const status = resolveStatus({ live: true, status: { kind: 'failed', error: 'boom' } }, t)
+    assert.equal(status.detail, 'boom')
+  })
+
+  it('reports working for a non-live session the Host still sees running', () => {
+    assert.equal(resolveStatus({ live: false, status: { kind: 'working' } }, t).tone, 'working')
+  })
+
+  it('falls back to the turn phase when the Host sends no status', () => {
+    assert.equal(resolveStatus({ live: true, turn: { phase: 'running' } }, t).tone, 'working')
+    assert.equal(resolveStatus({ live: true, turn: { phase: 'failed', error: 'x' } }, t).tone, 'failed')
+    assert.equal(resolveStatus({ live: true, subagents: { count: 1 } }, t).tone, 'monitoring')
+    assert.equal(resolveStatus({ live: true }, t).tone, 'ready')
+  })
+})
+
+describe('normalizePrefs', () => {
+  it('returns the defaults for an absent or malformed store', () => {
+    assert.deepEqual(normalizePrefs(undefined), mod.__internals.defaultPrefs)
+    assert.deepEqual(normalizePrefs(null), mod.__internals.defaultPrefs)
+    assert.deepEqual(normalizePrefs('nonsense'), mod.__internals.defaultPrefs)
+  })
+
+  it('accepts known booleans and drops unknown keys', () => {
+    const prefs = normalizePrefs({ showBranch: false, nonsense: true })
+    assert.equal(prefs.showBranch, false)
+    assert.equal(prefs.nonsense, undefined)
+    assert.equal(prefs.showModel, true)
+  })
+
+  it('ignores a non-boolean toggle rather than coercing it', () => {
+    assert.equal(normalizePrefs({ showBranch: 'no' }).showBranch, true)
+  })
+
+  it('accepts a string machine label only', () => {
+    assert.equal(normalizePrefs({ machineLabel: 'Box' }).machineLabel, 'Box')
+    assert.equal(normalizePrefs({ machineLabel: 7 }).machineLabel, '')
+  })
+})
+
+describe('preference-driven rendering', () => {
+  /** A preferences store backed by an in-memory object. */
+  function prefsWith(patch) {
+    let value = { ...mod.__internals.defaultPrefs, ...patch }
+    return {
+      subscribe: () => () => {},
+      get: () => value,
+      set: (next) => {
+        value = { ...value, ...next }
+      },
+      reset: () => {},
+    }
+  }
+
+  it('hides a fact when its toggle is off', async () => {
+    const store = await seededStore('s1', FULL_BUNDLE)
+    const html = render(components.SessionRowHover, { sessionId: 's1', store, t, prefs: prefsWith({ showBranch: false }) })
+    assert.doesNotMatch(html, /main \(uncommitted changes\)/)
+    // A different fact is unaffected.
+    assert.match(html, /deepseek-v4\.1-flash/)
+  })
+
+  it('lets the machine-label override win over the reported label', async () => {
+    const store = await seededStore('s1', FULL_BUNDLE)
+    const html = render(components.SessionRowHover, { sessionId: 's1', store, t, prefs: prefsWith({ machineLabel: 'Build Box' }) })
+    assert.match(html, /Build Box/)
+    assert.doesNotMatch(html, /Shima&#x27;s MacBook Pro/)
+  })
+
+  it('hides a header fact when its toggle is off', async () => {
+    const store = await seededStore('s1', FULL_BUNDLE)
+    const html = render(components.HeaderContextStrip, { sessionId: 's1', store, t, prefs: prefsWith({ showModel: false }) })
+    assert.doesNotMatch(html, /deepseek-v4\.1-flash/)
+    assert.match(html, /main/)
+  })
+})
+
+describe('PrefsPanel', () => {
+  it('renders a toggle per fact plus the machine-label input', () => {
+    const prefs = mod.__internals.createPrefsStore()
+    const html = render(components.PrefsPanel, { t, prefs })
+    assert.match(html, /Display/)
+    assert.match(html, /Machine/)
+    assert.match(html, /Branch/)
+    assert.match(html, /Model/)
+    assert.match(html, /Machine label/)
   })
 })
