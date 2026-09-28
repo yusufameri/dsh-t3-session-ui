@@ -1,0 +1,6 @@
+# dsh-t3-session-ui bundle patch: one row inserting the bundle's Host half.
+# The Client half (`./client`) adds the session-context seats; the Host half
+# serves the per-session context bundle those seats render.
+- insert:
+    - id: t3-session-ui
+      name: 'dsh-t3-session-ui'
