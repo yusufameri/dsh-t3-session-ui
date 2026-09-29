@@ -1,6 +1,6 @@
 {
   "name": "dsh-t3-session-ui",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "T3 Code's session-context UX for DeepSeek Harness: a session-row context block, provider chip, status pill, header context strip, and a context-window meter with compaction.",
   "type": "module",
   "license": "MIT",
