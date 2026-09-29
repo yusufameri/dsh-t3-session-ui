@@ -265,10 +265,10 @@ describe('apply', () => {
     assert.deepEqual(
       [...byName.keys()].sort(),
       [
-        'conversation.input.activity',
         'conversation.session.header.actions',
         'conversation.session.header.lineage',
         'conversation.session.header.utilities',
+        'settings.general.item',
         'sidebar.session.row.hover',
         'sidebar.session.row.leading',
         'sidebar.workspaces.session.menu.item',
@@ -277,7 +277,9 @@ describe('apply', () => {
     )
     assert.equal(byName.get('sidebar.session.row.hover').id, 't3s-hover')
     assert.equal(byName.get('sidebar.workspaces.session.row.action').id, 't3s-row-copy')
-    assert.equal(byName.get('conversation.input.activity').priority, 0)
+    // The composer keeps no plugin surface: the meter was taken out entirely.
+    assert.equal(byName.has('conversation.input.activity'), false)
+    assert.equal(byName.get('settings.general.item').id, 't3-session-ui')
     // The lineage seat is a documented replacement, so it shadows at -1.
     assert.equal(byName.get('conversation.session.header.lineage').priority, -1)
     assert.equal(registered.length, 8)
@@ -370,28 +372,6 @@ describe('HeaderContextStrip', () => {
   })
 })
 
-describe('ContextMeter', () => {
-  it('reports the used percentage and full accessibility label', async () => {
-    const store = await seededStore('s1', FULL_BUNDLE)
-    const html = render(components.ContextMeter, { sessionId: 's1', store, t })
-    assert.match(html, /42%/)
-    assert.match(html, /Context window, 42% used/)
-  })
-
-  it('falls back to a token count when the provider reported no window size', async () => {
-    const bundle = { ...FULL_BUNDLE, tokens: { used: 83000, baselineKind: 'estimated' } }
-    const store = await seededStore('s5', bundle)
-    const html = render(components.ContextMeter, { sessionId: 's5', store, t })
-    assert.match(html, /83k/)
-    assert.match(html, /Context window, 83k tokens used/)
-  })
-
-  it('renders nothing without a session id', () => {
-    const store = createContextStore({ effect: (fn) => fn(), on: () => () => {} })
-    assert.equal(render(components.ContextMeter, { store, t }), '')
-  })
-})
-
 describe('CopyContextAction', () => {
   it('renders a labelled copy control', () => {
     const store = createContextStore({ effect: (fn) => fn(), on: () => () => {} })
@@ -408,6 +388,7 @@ describe('SessionMenuItems', () => {
     assert.match(html, /Copy session context as JSON/)
     assert.match(html, /Copy branch name/)
     assert.match(html, /Copy working directory/)
+    assert.match(html, /Compact context/)
   })
 
   it('offers only the JSON copy when no git facts are known', async () => {
@@ -415,6 +396,7 @@ describe('SessionMenuItems', () => {
     const Component = makeMenuItems(store)
     const html = render(Component, { sessionId: 's3', store, t })
     assert.match(html, /Copy session context as JSON/)
+    assert.match(html, /Compact context/)
     assert.doesNotMatch(html, /Copy branch name/)
     assert.doesNotMatch(html, /Copy working directory/)
   })
@@ -565,14 +547,19 @@ describe('preference-driven rendering', () => {
   })
 })
 
-describe('PrefsPanel', () => {
-  it('renders a toggle per fact plus the machine-label input', () => {
+describe('SettingsRow', () => {
+  it('renders a toggle per fact plus the machine-label field', () => {
     const prefs = mod.__internals.createPrefsStore()
-    const html = render(components.PrefsPanel, { t, prefs })
+    const html = render(components.SettingsRow, { t, prefs })
     assert.match(html, /Display/)
     assert.match(html, /Machine/)
     assert.match(html, /Branch/)
     assert.match(html, /Model/)
     assert.match(html, /Machine label/)
+  })
+
+  it('renders with defaults when no preference store is bound', () => {
+    const html = render(components.SettingsRow, { t })
+    assert.match(html, /Context usage/)
   })
 })

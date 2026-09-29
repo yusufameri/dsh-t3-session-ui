@@ -1,10 +1,10 @@
 [
   "assets/live-app.png",
   "assets/live-hover-card.png",
-  "assets/live-composer-panel.png",
+  "assets/live-settings-row.png",
   "assets/session-context-hover.png",
-  "assets/context-meter-panel.png",
   "assets/session-header-strip.png",
+  "assets/settings-row.png",
   "assets/status-ladder.gif",
-  "assets/context-ring.gif"
+  "assets/session-context-hover-light.png"
 ]

@@ -2,31 +2,27 @@
 
 T3 Code's session-context UX for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness):
 a session-row context block, provider/model chip, a status pill, a per-session
-header context strip, and a context-window meter that can compact.
+header context strip, and a lineage breadcrumb — all in the surfaces DSH already has, with nothing added to the composer.
 
-| Session-row hover card | Context ring, panel open |
+| Live: session-row hover card | Live: the Settings row |
 |---|---|
-| ![Session-row hover card](assets/session-context-hover.png) | ![Context window ring with its panel open](assets/context-meter-panel.png) |
+| ![The hover card in a real DSH window, carrying real host values](assets/live-hover-card.png) | ![The plugin's preference row inside DSH Settings](assets/live-settings-row.png) |
 
-| Status ladder | Context ring filling |
+| Hover card (render) | Status ladder |
 |---|---|
-| ![Status rungs cycling](assets/status-ladder.gif) | ![The ring filling and turning red past 90%](assets/context-ring.gif) |
+| ![Session-row hover card](assets/session-context-hover.png) | ![Status rungs cycling](assets/status-ladder.gif) |
 
-| Conversation header | Light theme |
-|---|---|
-| ![Header context strip and lineage breadcrumb](assets/session-header-strip.png) | ![Hover card in the light theme](assets/session-context-hover-light.png) |
+| Header strip and lineage | Settings row (render) | Light theme |
+|---|---|---|
+| ![Header context strip and lineage breadcrumb](assets/session-header-strip.png) | ![The preference row](assets/settings-row.png) | ![Hover card in the light theme](assets/session-context-hover-light.png) |
 
-| Live: session-row hover card | Live: context panel in the composer |
-|---|---|
-| ![The hover card in a real DSH window, showing real host values](assets/live-hover-card.png) | ![The context panel expanded inline in the real composer](assets/live-composer-panel.png) |
-
-> **About these images.** The two above are **live captures** of a real DSH `0.2.0-rc.1` instance
-> with the plugin installed, so their values (`Shimas's MacBook Pro`, `default-workspace`,
-> `standard`, `ask`) come from real Host probes. The images further down are **component renders** —
-> the plugin's real components driven by fixture data with a representative theme token sheet — used
-> because a fresh instance has no git repository, no subagents and no long conversation to show.
-> [`assets/README.md`](assets/README.md) labels every file and gives the regenerate command for both
-> pipelines.
+> **About these images.** The first two are **live captures** of a real DSH `0.2.0-rc.1` instance
+> with the plugin installed — their values (`Shimas's MacBook Pro`, `default-workspace`, `standard`,
+> `ask`) each come from a different real Host probe, not from fixtures. The rest are **component
+> renders**: the plugin's real components driven by fixture data with a representative theme token
+> sheet, used where a fresh instance has no git repository, no subagents and no long conversation to
+> show. [`assets/README.md`](assets/README.md) covers the renders and their regenerate command;
+> `tools/live-cdp.mjs` drives the live captures.
 
 ## Credit
 
@@ -50,7 +46,7 @@ session outside a git work tree simply has no branch row.
 | Row hover action | `sidebar.workspaces.session.row.action` | Copy the context bundle, beside the shipped archive and pin buttons |
 | Header strip | `conversation.session.header.utilities` | Status, model, branch, workspace, approval policy, subagent count, preset, delegation depth |
 | Header breadcrumb | `conversation.session.header.lineage` | Reproduces the session title and adds parent, preset, and depth chips |
-| Context ring | `conversation.input.activity` | Context-window percentage as a ring (red past 90%) that expands into a panel with token counts, a progress bar, a **Compact** button, and the display settings |
+| Settings row | `settings.general.item` | The plugin's own preference row in DSH Settings — which facts the surfaces report, and a machine-label override |
 | Copy action | `conversation.session.header.actions` | Copy the whole context bundle as JSON |
 | Row menu items | `sidebar.workspaces.session.menu.item` | Copy context as JSON, copy branch name, copy working directory |
 
@@ -73,18 +69,20 @@ read from the waterfalls instead of the session log: a listener that wraps
 
 ### Display settings
 
-The context ring's panel carries the display preferences, stored per browser
-under `dsh.t3-session-ui.prefs.v1`: a toggle per fact (machine, workspace,
-branch, model, preset, approval, context) and a **machine label** override that
-wins over the Host's prettified hostname. They stay browser-side deliberately —
+The preferences live in DSH's own Settings panel, as one row in the General
+section, and are stored per browser under `dsh.t3-session-ui.prefs.v1`: a toggle
+per fact (machine, workspace, branch, model, preset, approval, context) and a
+**machine label** override that wins over the Host's prettified hostname. They
+stay browser-side deliberately —
 they change only this plugin's rendering and must work without a Host round
 trip, and one Host is shared by every connected browser.
 
-The context ring occupies `conversation.input.activity`, which is **empty in a
-stock DSH** — it adds a control rather than replacing a shipped one. It expands
-across the composer's toolbar while open, using the seat's `onActiveChange`
-handoff. The **Compact** button runs DSH's own `/compact` command; this plugin
-never reimplements compaction.
+**Nothing is added to the composer.** An earlier revision put a context-window
+ring there; it was removed, because the input area is for input and the session
+facts belong in the session surfaces. The token detail the ring used to show now
+appears in the hover card's context row (`42% · 83k/200k`), and **Compact
+context** is an item in the session row's `...` menu, running DSH's own
+`/compact` command; this plugin never reimplements compaction.
 
 ## Install
 
@@ -143,7 +141,7 @@ The plugin reads one optional setting from the bundle patch:
     machineLabel: "Shima's MacBook Pro"   # optional; defaults to the prettified hostname
 ```
 
-Everything else is a per-browser display preference, set from the context ring's panel.
+Everything else is a per-browser display preference, set from the plugin's row in DSH Settings.
 
 ## Development
 

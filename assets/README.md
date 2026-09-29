@@ -1,49 +1,27 @@
 # Capture assets
 
-> **Two kinds of image live here.** The `live-*.png` files ARE screenshots of a real DeepSeek
-> Harness GUI with this plugin installed — real `os.hostname()`, real session `cwd`, real agent
-> preset, real approval policy, real token measurement, read through the plugin's own Host route.
-> Everything else (`session-context-*`, `context-*`, `status-ladder`, `context-ring`) is a
-> **component render**: the plugin's real `client.js` driven by fixture data and painted with a
-> representative `--dsw-alias-*` token sheet. Those renders use invented data (`Shima's MacBook
-> Pro`, `acme`, `deepseek-v4.1-flash`) and are not screenshots; the live captures supersede them
-> wherever the two disagree.
+> **These are renders, not screenshots.** Every image here is the plugin's *real* components —
+> `client.js` loaded through a stubbed `window.__ModuleLoader__`, its own `apply()` run to inject
+> the real stylesheet — driven by fixture data through the plugin's own code path and painted with a
+> **representative token sheet** for the `--dsw-alias-*` variables. They are **not screenshots of a
+> live DSH window**, the token values were not read from a running DSH install, and nothing here
+> proves what a live session looks like. The fixtures use invented data (`Shima's MacBook Pro`,
+> `acme`, `deepseek-v4.1-flash`), not a real machine or session.
 
 Two more honest caveats: the pages disable CSS animations and transitions so a capture is
 deterministic, which means the working-status dot is shown at full opacity rather than mid-pulse; and
 the GIF frame durations are nominal, so the timing looks the same on any viewer regardless of how
 fast the browser actually paints.
 
-## Live captures
-
-Taken from a real DSH `0.2.0-rc.1` instance booted with an isolated `DSH_HOME` containing only this
-plugin, driven over the Chrome DevTools Protocol (`tools/live-cdp.mjs`). The values shown are read
-from that instance's own services, so nothing here is fixture data — note `Shimas's MacBook Pro`,
-`default-workspace`, `standard` and `ask`, each of which comes from a different Host probe.
-
-| File | Shows | Size |
-|---|---|---|
-| [`live-app.png`](./live-app.png) | The whole GUI, to show this is a real app window | 1440×757, 58658 B |
-| [`live-hover-card.png`](./live-hover-card.png) | The session-row hover card on a real row, carrying real host values | 261×218, 10780 B |
-| [`live-composer-panel.png`](./live-composer-panel.png) | The context ring's panel, expanded inline in the real composer | 790×300, 21431 B |
-
-Regenerate (needs a running instance and Chrome on `--remote-debugging-port`):
-
-```sh
-DSH_MODULE_RESOLVE=~/.dsh/profiles/web/package.json \
-  node tools/live-cdp.mjs out.png --eval "document.querySelector('.t3s-meterButton').click()"
-```
-
-## Component renders
+## Current assets
 
 | File | Shows | Frame / size |
 |---|---|---|
-| [`session-context-hover.png`](./session-context-hover.png) | Session-row hover card — dark | 318×319, still, 14017 B |
-| [`session-context-hover-light.png`](./session-context-hover-light.png) | Session-row hover card — light | 318×319, still, 17043 B |
-| [`context-meter-panel.png`](./context-meter-panel.png) | Context ring, panel open (92% used) | 684×484, still, 20373 B |
+| [`session-context-hover.png`](./session-context-hover.png) | Session-row hover card — dark | 318×319, still, 14999 B |
+| [`session-context-hover-light.png`](./session-context-hover-light.png) | Session-row hover card — light | 318×319, still, 18117 B |
 | [`session-header-strip.png`](./session-header-strip.png) | Conversation header — context strip and lineage | 904×116, still, 9241 B |
-| [`status-ladder.gif`](./status-ladder.gif) | Status ladder | 318×319, 6 frames @ 1100 ms, loop=0, 42100 B |
-| [`context-ring.gif`](./context-ring.gif) | Context ring | 254×298, 7 frames @ 700 ms, loop=0, 13603 B |
+| [`status-ladder.gif`](./status-ladder.gif) | Status ladder | 318×319, 6 frames @ 1100 ms, loop=0, 44442 B |
+| [`settings-row.png`](./settings-row.png) | Settings row — Session context display preferences | 704×194, still, 12309 B |
 
 ## How they are produced
 
@@ -86,22 +64,15 @@ six assets, rewrites this file with fresh dimensions, and then verifies with Pil
 
 `SessionRowHover` on a fully-populated fixture bundle: the resolved status pill, machine, workspace, dirty branch, model · provider, agent preset, parent session, delegation depth, approval policy and context usage, plus the error line for a failed turn.
 
-- 318×319 px, 14017 bytes, dark theme, 376 distinct colours
+- 318×319 px, 14999 bytes, dark theme, 377 distinct colours
 - Regenerate: `pnpm capture -- --only hover-dark`
 
 ### `session-context-hover-light.png`
 
 The same hover card and fixture rendered against the light token sheet.
 
-- 318×319 px, 17043 bytes, light theme, 583 distinct colours
+- 318×319 px, 18117 bytes, light theme, 584 distinct colours
 - Regenerate: `pnpm capture -- --only hover-light`
-
-### `context-meter-panel.png`
-
-`ContextMeter` after a real click on `.t3s-meterButton`, so the internal panel is open: the ring in its overloaded red state, the 92% token bar, the measured-from note, the **Compact** action, and the display toggles it hosts.
-
-- 684×484 px, 20373 bytes, dark theme, 426 distinct colours
-- Regenerate: `pnpm capture -- --only meter-panel`
 
 ### `session-header-strip.png`
 
@@ -114,17 +85,16 @@ The same hover card and fixture rendered against the light token sheet.
 
 `SessionRowHover` cycled through the six rungs the Host can resolve — approval, awaiting input, working, error, subagent monitoring (with `subagents.count`) and ready — one frame each, on a fixed-height card so the block does not jump between frames.
 
-- 6 frames, 318×319 px, 42100 bytes, 1100 ms per frame, `loop=0` (infinite), dark theme
+- 6 frames, 318×319 px, 44442 bytes, 1100 ms per frame, `loop=0` (infinite), dark theme
 - Frames: approval, input, working, failed, monitoring, ready
 - Regenerate: `pnpm capture -- --only status-ladder`
 
-### `context-ring.gif`
+### `settings-row.png`
 
-`ContextMeter` with the panel closed, at 6%, 28%, 41.5%, 67%, 82%, 92% and 97% of the context window. The ring is brand blue until it crosses the plugin's 90% threshold, then switches to the error colour — the last two frames.
+`SettingsRow`, as DSH renders it in the General section of Settings: one label, a wrapping toggle per fact, and the machine-label override. This is where the plugin keeps its preferences, so nothing of the sort sits in the composer.
 
-- 7 frames, 254×298 px, 13603 bytes, 700 ms per frame, `loop=0` (infinite), dark theme
-- Frames: 6%, 28%, 41.5%, 67%, 82%, 92%, 97%
-- Regenerate: `pnpm capture -- --only context-ring`
+- 704×194 px, 12309 bytes, dark theme, 308 distinct colours
+- Regenerate: `pnpm capture -- --only settings-row`
 
 ## Theme token sheet
 

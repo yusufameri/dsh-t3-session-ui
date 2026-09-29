@@ -186,23 +186,6 @@ function bundleWithStatus(kind) {
   return bundle
 }
 
-/** A clone of the full bundle at a given context-window pressure. */
-function bundleAtPercent(usedPercent) {
-  const bundle = structuredClone(FULL_BUNDLE)
-  bundle.sessionId = 's1'
-  bundle.turn = { phase: 'idle' }
-  bundle.status = { kind: 'ready' }
-  bundle.tokens = {
-    used: Math.round((usedPercent / 100) * 200000),
-    max: 200000,
-    usedPercent,
-    baselineKind: 'usage',
-    surfaceDeltaTokens: 0,
-    nodeCount: 5,
-    logRevision: 10,
-  }
-  return bundle
-}
 
 // ---------------------------------------------------------------------- css
 
@@ -232,6 +215,16 @@ const COMPOSER_CSS = `
   border-radius: 14px;
 `
 
+/** A settings-page row: full width, layer-1 background, no shadow. */
+const SETTINGS_CSS = `
+  display: block;
+  width: 640px;
+  padding: 14px 16px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+`
+
 /** The conversation header bar. */
 const HEADER_CSS = `
   display: flex;
@@ -242,21 +235,6 @@ const HEADER_CSS = `
   background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
-`
-
-/**
- * The bare context ring, scaled up so an 18px ring is legible in a GIF.
- *
- * The surface deliberately carries no card chrome: `zoom` multiplies padding
- * too, so any background/border here is blown up threefold and the crop becomes
- * an oversized pill around a small ring. The ring and its percentage label sit
- * directly on the page background instead.
- */
-const RING_CSS = `
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  zoom: 3;
 `
 
 // --------------------------------------------------------------------- shots
@@ -304,28 +282,6 @@ const SHOTS = [
       {
         blocks: [{ component: 'SessionRowHover', props: { sessionId: 's1' } }],
         fixtures: { s1: structuredClone(FULL_BUNDLE) },
-      },
-    ],
-  },
-  {
-    id: 'meter-panel',
-    kind: 'png',
-    asset: 'context-meter-panel.png',
-    theme: 'dark',
-    label: 'Context ring, panel open (92% used)',
-    what:
-      '`ContextMeter` after a real click on `.t3s-meterButton`, so the internal panel is open: the ' +
-      'ring in its overloaded red state, the 92% token bar, the measured-from note, the **Compact** ' +
-      'action, and the display toggles it hosts.',
-    surfaceCss: COMPOSER_CSS,
-    contentCss: 'display: flex; align-items: flex-end; justify-content: flex-end;',
-    prefs: true,
-    afterMount: 'open-meter',
-    window: { w: 820, h: 700 },
-    frames: [
-      {
-        blocks: [{ component: 'ContextMeter', props: { sessionId: 's1' } }],
-        fixtures: { s1: bundleAtPercent(92) },
       },
     ],
   },
@@ -381,24 +337,21 @@ const SHOTS = [
     })),
   },
   {
-    id: 'context-ring',
-    kind: 'gif',
-    asset: 'context-ring.gif',
+    id: 'settings-row',
+    kind: 'png',
+    asset: 'settings-row.png',
     theme: 'dark',
-    label: 'Context ring',
+    label: 'Settings row — Session context display preferences',
     what:
-      '`ContextMeter` with the panel closed, at 6%, 28%, 41.5%, 67%, 82%, 92% and 97% of the ' +
-      'context window. The ring is brand blue until it crosses the plugin\'s 90% threshold, then ' +
-      'switches to the error colour — the last two frames.',
-    surfaceCss: RING_CSS,
-    durationMs: 700,
-    window: { w: 460, h: 520 },
-    maxBytes: 1000000,
-    frames: [6, 28, 41.5, 67, 82, 92, 97].map((percent) => ({
-      label: `${percent}%`,
-      blocks: [{ component: 'ContextMeter', props: { sessionId: 's1' } }],
-      fixtures: { s1: bundleAtPercent(percent) },
-    })),
+      '`SettingsRow`, as DSH renders it in the General section of Settings: one label, a ' +
+      'wrapping toggle per fact, and the machine-label override. This is where the plugin keeps ' +
+      'its preferences, so nothing of the sort sits in the composer.',
+    surfaceCss: SETTINGS_CSS,
+    contentCss: 'display: block; width: 100%;',
+    prefs: true,
+    window: { w: 780, h: 320 },
+    // No session data: the settings row renders from preferences alone.
+    frames: [{ blocks: [{ component: 'SettingsRow', props: {} }], fixtures: {} }],
   },
 ]
 
@@ -517,16 +470,9 @@ const PAGE_SCRIPT = `
     ].join(',');
   }
 
-  if (spec.afterMount === 'open-meter') {
-    setTimeout(function () {
-      var button = document.querySelector('.t3s-meterButton');
-      if (button === null) throw new Error('meter button not found to open');
-      button.click();
-      setTimeout(report, 140);
-    }, 60);
-  } else {
-    setTimeout(report, 140);
-  }
+  // Nothing to click: measure and report. A per-shot afterMount hook could
+  // drive an interaction here before reporting.
+  setTimeout(report, 140);
   } catch (error) {
     fail('THROWN', error);
   }

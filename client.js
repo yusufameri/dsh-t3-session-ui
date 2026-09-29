@@ -76,20 +76,9 @@ window.__ModuleLoader__.load({
       'prefs.machineLabel': 'Machine label',
       'prefs.machineLabelPlaceholder': 'Defaults to this machine’s hostname',
       'prefs.reset': 'Reset',
-      'meter.title': 'Context Window',
-      'meter.aria': 'Context window, {percent} used',
-      'meter.ariaTokens': 'Context window, {tokens} tokens used',
-      'meter.loading': 'Reading context…',
-      'meter.loadFailed': 'Could not read the session context: {message}',
-      'meter.unavailable': 'This session has no measured context yet.',
-      'meter.noMax': 'The provider has not reported a context window size.',
-      'meter.baseline': 'Measured from {kind}',
-      'meter.compact': 'Compact',
-      'meter.compacting': 'Compacting…',
-      'meter.compactFailed': 'Compaction failed: {message}',
-      'meter.compactUnavailable': 'Compaction is unavailable for this session.',
-      'meter.expand': 'Show context details',
-      'meter.collapse': 'Hide context details',
+      'menu.compact': 'Compact context',
+      'menu.compacting': 'Compacting…',
+      'menu.compactFailed': 'Compaction failed: {message}',
       'action.copy': 'Copy session context',
       'action.copied': 'Copied',
       'menu.copyJson': 'Copy session context as JSON',
@@ -135,20 +124,9 @@ window.__ModuleLoader__.load({
       'prefs.machineLabel': '机器名称',
       'prefs.machineLabelPlaceholder': '默认使用本机主机名',
       'prefs.reset': '重置',
-      'meter.title': '上下文窗口',
-      'meter.aria': '上下文窗口，已用 {percent}',
-      'meter.ariaTokens': '上下文窗口，已用 {tokens} token',
-      'meter.loading': '正在读取上下文…',
-      'meter.loadFailed': '无法读取会话上下文：{message}',
-      'meter.unavailable': '该会话尚无上下文测量。',
-      'meter.noMax': '提供方未报告上下文窗口大小。',
-      'meter.baseline': '基于 {kind} 测量',
-      'meter.compact': '压缩',
-      'meter.compacting': '正在压缩…',
-      'meter.compactFailed': '压缩失败：{message}',
-      'meter.compactUnavailable': '该会话无法压缩。',
-      'meter.expand': '展开上下文详情',
-      'meter.collapse': '收起上下文详情',
+      'menu.compact': '压缩上下文',
+      'menu.compacting': '正在压缩…',
+      'menu.compactFailed': '压缩失败：{message}',
       'action.copy': '复制会话上下文',
       'action.copied': '已复制',
       'menu.copyJson': '复制会话上下文为 JSON',
@@ -592,8 +570,12 @@ window.__ModuleLoader__.load({
           : git.dirty === true
             ? fill(t('row.branchDirty'), { branch: git.branch })
             : git.branch
+      // The context row keeps the token detail the removed composer meter used
+      // to show, so taking the meter out loses no information.
       const contextLabel = Number.isFinite(bundle.tokens?.usedPercent)
-        ? formatPercent(bundle.tokens.usedPercent)
+        ? Number.isFinite(bundle.tokens?.max)
+          ? `${formatPercent(bundle.tokens.usedPercent)} · ${formatTokens(bundle.tokens.used)}/${formatTokens(bundle.tokens.max)}`
+          : formatPercent(bundle.tokens.usedPercent)
         : Number.isFinite(bundle.tokens?.used)
           ? formatTokens(bundle.tokens.used)
           : undefined
@@ -717,159 +699,6 @@ window.__ModuleLoader__.load({
             h('span', { className: 't3s-stripText' }, item.text),
           ),
         ),
-      )
-    }
-
-    /**
-     * `conversation.input.activity` — T3's context-window ring.
-     *
-     * The ring reports how full the model's context window is and turns red
-     * past 90%; opening it expands across the composer's toolbar (the seat's
-     * `onActiveChange` yields the width) and offers the compaction action,
-     * which calls DSH's own `/compact` rather than reimplementing it.
-     */
-    function ContextMeter(props) {
-      const { sessionId, store, t, onActiveChange } = props
-      const [open, setOpen] = useState(false)
-      const [compacting, setCompacting] = useState(false)
-      const [compactError, setCompactError] = useState(undefined)
-      const entry = useSessionContext(store, sessionId)
-      const bundle = entry?.value
-      const usedPercent = bundle?.tokens?.usedPercent
-      const used = bundle?.tokens?.used
-      const max = bundle?.tokens?.max
-      const running = bundle?.turn?.phase === 'running'
-
-      useEffect(() => {
-        if (typeof onActiveChange === 'function') onActiveChange(open)
-        return () => {
-          if (typeof onActiveChange === 'function') onActiveChange(false)
-        }
-      }, [open, onActiveChange])
-
-      const onCompact = useCallback(async () => {
-        if (typeof sessionId !== 'string' || sessionId === '') return
-        setCompacting(true)
-        setCompactError(undefined)
-        try {
-          await call('compact', { sessionId })
-          await store.load(sessionId, true)
-        } catch (error) {
-          setCompactError(error instanceof Error ? error.message : String(error))
-        } finally {
-          setCompacting(false)
-        }
-      }, [sessionId, store])
-
-      if (typeof sessionId !== 'string' || sessionId === '') return null
-
-      const clamped = Math.max(0, Math.min(100, Number.isFinite(usedPercent) ? usedPercent : 0))
-      const radius = 9.75
-      const circumference = 2 * Math.PI * radius
-      const dashOffset = circumference * (1 - clamped / 100)
-      const overloaded = clamped > 90
-      const label = formatPercent(usedPercent)
-      const aria = label !== null
-        ? fill(t('meter.aria'), { percent: label })
-        : Number.isFinite(used)
-          ? fill(t('meter.ariaTokens'), { tokens: formatTokens(used) })
-          : t('meter.loading')
-
-      const ring = h(
-        'span',
-        { className: 't3s-ringWrap' },
-        h(
-          'svg',
-          { viewBox: '0 0 24 24', className: 't3s-ring', 'aria-hidden': 'true' },
-          h('circle', { cx: 12, cy: 12, r: radius, fill: 'none', stroke: 'var(--dsw-alias-border-l2)', strokeWidth: 3 }),
-          h('circle', {
-            cx: 12,
-            cy: 12,
-            r: radius,
-            fill: 'none',
-            stroke: overloaded ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-brand-primary)',
-            strokeWidth: 3,
-            strokeLinecap: 'round',
-            strokeDasharray: circumference,
-            strokeDashoffset: dashOffset,
-            transform: 'rotate(-90 12 12)',
-          }),
-        ),
-      )
-
-      return h(
-        'span',
-        { className: 't3s-meter' },
-        h(
-          'button',
-          {
-            type: 'button',
-            className: 't3s-meterButton',
-            'aria-label': aria,
-            'aria-expanded': open,
-            title: label === null ? aria : `${label}${Number.isFinite(max) ? ` · ${formatTokens(used)}/${formatTokens(max)}` : ''}`,
-            onClick: () => setOpen((value) => !value),
-          },
-          ring,
-          h('span', { className: 't3s-meterText' }, label ?? (Number.isFinite(used) ? formatTokens(used) : '—')),
-        ),
-        open
-          ? h(
-              'span',
-              { className: 't3s-panel', role: 'dialog', 'aria-label': t('meter.title') },
-              h(
-                'span',
-                { className: 't3s-panelHead' },
-                h('span', { className: 't3s-panelTitle' }, t('meter.title')),
-                label === null
-                  ? null
-                  : h(
-                      'span',
-                      { className: 't3s-panelMeta' },
-                      label,
-                      Number.isFinite(max) ? ` · ${formatTokens(used)}/${formatTokens(max)}` : '',
-                    ),
-              ),
-              bundle === undefined
-                ? h(
-                    'span',
-                    { className: entry?.error === undefined ? 't3s-panelNote' : 't3s-panelError' },
-                    // Never swallow a failed read: an indefinite "Reading…" is
-                    // indistinguishable from a broken Host route.
-                    entry?.error === undefined
-                      ? t('meter.loading')
-                      : fill(t('meter.loadFailed'), { message: entry.error }),
-                  )
-                : Number.isFinite(used) && Number.isFinite(max)
-                  ? h(
-                      'span',
-                      { className: 't3s-bar', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': Math.round(clamped) },
-                      h('span', { className: 't3s-barFill', style: { width: `${clamped}%` } }),
-                    )
-                  : h('span', { className: 't3s-panelNote' }, t('meter.noMax')),
-              bundle?.tokens?.baselineKind === undefined
-                ? null
-                : h('span', { className: 't3s-panelNote' }, fill(t('meter.baseline'), { kind: bundle.tokens.baselineKind })),
-              h(
-                'span',
-                { className: 't3s-panelActions' },
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 't3s-action',
-                    disabled: compacting || bundle?.live !== true,
-                    onClick: onCompact,
-                  },
-                  compacting ? t('meter.compacting') : t('meter.compact'),
-                ),
-              ),
-              compactError === undefined
-                ? null
-                : h('span', { className: 't3s-panelError' }, fill(t('meter.compactFailed'), { message: compactError })),
-              h(PrefsPanel, { t, prefs: props.prefs }),
-            )
-          : null,
       )
     }
 
@@ -1000,35 +829,32 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The display preferences panel: which facts the surfaces report, and an
-     * optional machine-label override that wins over the Host's prettified
-     * hostname.
+     * `settings.general.item` — the plugin's preference row.
+     *
+     * The General section only stacks rows and hands the occupant no props, so
+     * this row draws its own label and controls. These are per-browser display
+     * preferences; none of them changes what the plugin reads from the Host.
      */
-    function PrefsPanel(props) {
+    function SettingsRow(props) {
       const { t, prefs } = props
       const value = usePrefs(prefs)
       const set = useCallback((patch) => prefs?.set(patch), [prefs])
       const toggleKeys = ['showMachine', 'showWorkspace', 'showBranch', 'showModel', 'showPreset', 'showApproval', 'showContext']
       return h(
-        'span',
-        { className: 't3s-prefs' },
+        'div',
+        { className: 't3s-setting' },
         h(
-          'span',
-          { className: 't3s-panelHead' },
-          h('span', { className: 't3s-panelTitle' }, t('prefs.title')),
-          h(
-            'button',
-            { type: 'button', className: 't3s-linkButton', onClick: () => prefs?.reset() },
-            t('prefs.reset'),
-          ),
+          'div',
+          { className: 't3s-settingHead' },
+          h('span', { className: 't3s-settingTitle' }, t('prefs.title')),
+          h('button', { type: 'button', className: 't3s-linkButton', onClick: () => prefs?.reset() }, t('prefs.reset')),
         ),
-        toggleKeys.map((key) =>
-          h(PrefToggle, {
-            key,
-            checked: value[key],
-            label: t(`prefs.${key}`),
-            onChange: (next) => set({ [key]: next }),
-          }),
+        h(
+          'div',
+          { className: 't3s-settingToggles' },
+          toggleKeys.map((key) =>
+            h(PrefToggle, { key, checked: value[key], label: t(`prefs.${key}`), onChange: (next) => set({ [key]: next }) }),
+          ),
         ),
         h('input', {
           type: 'text',
@@ -1040,6 +866,7 @@ window.__ModuleLoader__.load({
         }),
       )
     }
+
     /**
      * `sidebar.workspaces.session.menu.item` — per-session context actions,
      * the DSH analogue of T3's right-click thread menu entries.
@@ -1049,6 +876,22 @@ window.__ModuleLoader__.load({
         const { sessionId, t } = props
         const entry = useSessionContext(store, sessionId)
         const bundle = entry?.value
+        const [compacting, setCompacting] = useState(false)
+        const [compactError, setCompactError] = useState(undefined)
+        // Compaction is a session action, so it belongs with the other session
+        // actions rather than in the composer.
+        const runCompact = useCallback(async () => {
+          if (typeof sessionId !== 'string' || sessionId === '') return
+          setCompacting(true)
+          setCompactError(undefined)
+          try {
+            await call('compact', { sessionId })
+          } catch (error) {
+            setCompactError(error instanceof Error ? error.message : String(error))
+          } finally {
+            setCompacting(false)
+          }
+        }, [sessionId])
         const write = useCallback(
           async (text) => {
             try {
@@ -1084,6 +927,22 @@ window.__ModuleLoader__.load({
               t('menu.copyCwd'),
             ),
           )
+        }
+        items.push(
+          h(
+            'button',
+            {
+              key: 'compact',
+              type: 'button',
+              className: 't3s-menuItem',
+              disabled: compacting || bundle?.live !== true,
+              onClick: () => void runCompact(),
+            },
+            compacting ? t('menu.compacting') : t('menu.compact'),
+          ),
+        )
+        if (compactError !== undefined) {
+          items.push(h('span', { key: 'compact-error', className: 't3s-menuError' }, fill(t('menu.compactFailed'), { message: compactError })))
         }
         return h('span', { className: 't3s-menu' }, items)
       }
@@ -1130,43 +989,15 @@ window.__ModuleLoader__.load({
 .t3s-stripIcon { display: inline-flex; flex: 0 0 auto; color: var(--dsw-alias-label-secondary); opacity: .8; }
 .t3s-stripText { flex: 0 0 auto; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.t3s-meter { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
-.t3s-meterButton { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border: 0; border-radius: 999px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; font-size: 11px; }
-.t3s-meterButton:hover { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
-.t3s-meterButton:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
-.t3s-ringWrap { display: inline-flex; width: 18px; height: 18px; }
-.t3s-ring { width: 18px; height: 18px; display: block; }
-.t3s-meterText { font-variant-numeric: tabular-nums; }
-
-/*
- * The panel expands INLINE, across the composer toolbar. This seat's own
- * contract is that an occupant "can expand across the toolbar while retaining
- * the editor and submit action" and that it signals the toolbar through its
- * onActiveChange callback — a floating popover fights that, and an absolutely
- * positioned panel escapes to the page corner when the toolbar's row does not
- * establish a positioning context.
- */
-.t3s-panel { display: flex; flex-direction: column; gap: 8px; width: min(560px, 60vw); padding: 10px 11px; border-radius: 10px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-label-secondary); font-size: 11px; text-align: left; }
-.t3s-panelHead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.t3s-panelTitle { font-weight: 600; color: var(--dsw-alias-label-primary); }
-.t3s-panelMeta { font-variant-numeric: tabular-nums; }
-.t3s-panelNote { color: var(--dsw-alias-label-secondary); opacity: .85; }
-.t3s-panelError { color: var(--dsw-alias-state-error-primary); }
-.t3s-bar { display: block; height: 6px; border-radius: 999px; background: var(--dsw-alias-bg-layer-2); overflow: hidden; }
-.t3s-barFill { display: block; height: 100%; background: var(--dsw-alias-brand-primary); transition: width .4s ease-out; }
-@media (prefers-reduced-motion: reduce) { .t3s-barFill { transition: none; } }
-.t3s-panelActions { display: flex; justify-content: flex-end; }
-.t3s-action { padding: 3px 10px; border-radius: 7px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; font: inherit; font-size: 11px; }
-.t3s-action:hover:not(:disabled) { border-color: var(--dsw-alias-brand-primary); }
-.t3s-action:disabled { opacity: .55; cursor: default; }
-
 .t3s-iconButton { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; font-size: 11px; }
 .t3s-iconButton:hover { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
 .t3s-iconButtonText { white-space: nowrap; }
 
 .t3s-menu { display: flex; flex-direction: column; }
 .t3s-menuItem { display: block; width: 100%; padding: 6px 10px; border: 0; background: transparent; color: var(--dsw-alias-label-primary); text-align: left; cursor: pointer; font: inherit; font-size: 12px; border-radius: 6px; }
-.t3s-menuItem:hover { background: var(--dsw-alias-bg-layer-2); }
+.t3s-menuItem:hover:not(:disabled) { background: var(--dsw-alias-bg-layer-2); }
+.t3s-menuItem:disabled { opacity: .55; cursor: default; }
+.t3s-menuError { display: block; padding: 4px 10px; color: var(--dsw-alias-state-error-primary); font-size: 11px; }
 
 .t3s-iconButtonDone { color: var(--dsw-alias-state-success-primary); }
 
@@ -1176,9 +1007,13 @@ window.__ModuleLoader__.load({
 .t3s-lineageTitleButton:hover { text-decoration: underline; }
 .t3s-lineageChips { flex: 0 0 auto; }
 
-/* The toggles wrap into rows so the wider inline panel stays short. */
-.t3s-prefs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; border-top: 1px solid var(--dsw-alias-border-l1); padding-top: 8px; margin-top: 2px; }
-.t3s-prefRow { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+/* One settings row in the General section: a label, a wrapping toggle set,
+   and the machine-label field. */
+.t3s-setting { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.t3s-settingHead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.t3s-settingTitle { color: var(--dsw-alias-label-primary); }
+.t3s-settingToggles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+.t3s-prefRow { display: flex; align-items: center; gap: 5px; cursor: pointer; color: var(--dsw-alias-label-secondary); }
 .t3s-prefRow input { accent-color: var(--dsw-alias-brand-primary); }
 .t3s-prefLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t3s-prefInput { flex: 1 1 100%; width: 100%; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font: inherit; font-size: 11px; }
@@ -1260,10 +1095,11 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('sidebar.workspaces.session.menu.item', () =>
         ctx.slots.register({ name: 'sidebar.workspaces.session.menu.item', id: 't3s-menu', order: 20, label: 'Session context', locale: NS }, bound(makeMenuItems(store), ctx, store, prefs)),
       )
-      // The composer's activity seat is empty in a stock DSH, so the ring adds
-      // rather than replaces. The seat yields composer width while open.
-      ctx.slots.inject('conversation.input.activity', () =>
-        ctx.slots.register({ name: 'conversation.input.activity', priority: 0, locale: NS }, bound(ContextMeter, ctx, store, prefs)),
+      // Preferences belong in DSH's own Settings panel, never in a content
+      // surface: this row seat is additive and stacks beside Language and
+      // Appearance.
+      ctx.slots.inject('settings.general.item', () =>
+        ctx.slots.register({ name: 'settings.general.item', id: 't3-session-ui', order: 16, locale: NS }, bound(SettingsRow, ctx, store, prefs)),
       )
     }
 
@@ -1274,11 +1110,10 @@ window.__ModuleLoader__.load({
         SessionRowHover,
         SessionRowLeading,
         HeaderContextStrip,
-        ContextMeter,
+        SettingsRow,
         CopyContextAction,
         RowContextAction,
         HeaderLineage,
-        PrefsPanel,
       },
       createContextStore,
       createPrefsStore,
